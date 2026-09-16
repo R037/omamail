@@ -5,6 +5,7 @@ import "../providers"
 import "../cache"
 
 import "../cache/Cache.js" as Cache
+import "../cache/RenderCache.js" as RenderCache
 import "../message/Html.js" as Html
 import "../providers/GmailApi.js" as Api
 import "../message/Message.js" as Mail
@@ -154,6 +155,20 @@ Item {
   // that learns something new applies it to every message already on disk
   // rather than only to the ones fetched afterwards.
   property string sourceHtml: ""
+  // The full record the disk cache painted this selection from, or null when
+  // nothing was cached yet. Kept so the live read landing afterwards — Gmail
+  // answers slower than a local file — can tell a confirmed repeat of what is
+  // already on screen from an actual first look, and skip recomputing and
+  // rewriting what a repeat has no new answer for. See `select()`.
+  property var cachedRecord: null
+  // What `Html.sanitize` did the last several times it was asked, keyed by
+  // the markup and whether plain text was wanted with it. Unlike everything
+  // around it this is never reset by `select()` or `clearSelection()`: its
+  // whole purpose is to answer a message stepped away from and back to
+  // without asking Html.js the same question twice, so its lifetime is the
+  // account's, not the selection's. Only consulted for the images-blocked
+  // render — see `renderSource` — which is what every message opens as.
+  property var renderCache: RenderCache.empty()
   // The parsed document behind `selectedHtml`. The reader fits it to whatever
   // width it happens to be and rebuilds on every relayout, so handing over the
   // tree rather than the string is the difference between one parse per message
@@ -658,12 +673,17 @@ Item {
 
   // --------------------------------------------------------------- detail
 
-  function select(id) {
+  // markRead defaults to true: opening a message (Enter, "o", a click) marks
+  // it read the way every other mail client does. A cursor move previews the
+  // same body in the pane that is already on screen and passes false, because
+  // the render is not a decision to have read the thing — see the caller.
+  function select(id, markRead) {
     var messageId = String(id || "")
     if (messageId === "") {
       clearSelection()
       return
     }
+    var willMarkRead = markRead === undefined ? true : markRead
     selectedId = messageId
     var serial = ++detailSerial
     abortRequest(detailHandle)
@@ -678,6 +698,7 @@ Item {
     selectedReaderEmpty = true
     selectedReaderRemoteImages = 0
     sourceHtml = ""
+    cachedRecord = null
     remoteImagesAllowed = alwaysShowImages
     remoteImagesLoading = false
     remoteImageData = ({})
@@ -736,6 +757,10 @@ Item {
       // second later when the network agrees.
       root.selectedInvite = cached.invite
       root.selectedUnsubscribe = cached.unsubscribe
+      // What the live read compares its own answer against. A body never
+      // changes once fetched, so when Gmail's answer lands and says the same
+      // thing, that is this record confirmed rather than a new one to build.
+      root.cachedRecord = cached
       // Including a body that is empty, which is a real answer: this message
       // has no text, and saying so at once beats a skeleton that waits for the
       // network to say the same thing.
@@ -759,8 +784,14 @@ Item {
       var summary = Model.detailSummary(previous,
         Mail.summarize(payload, new Date()))
       root.selectedMessage = summary
-      var decoded = Mail.extractBody(payload.payload)
-      var rawHtml = Mail.extractHtml(payload.payload)
+      // One walk of the MIME tree for both: a message with no text/plain
+      // part of its own has its text/html part decoded once here rather than
+      // once for each of `extractBody` and `extractHtml` asking for it
+      // separately, and that is exactly the shape most of what falls back to
+      // html in the first place.
+      var parts = Mail.extractParts(payload.payload)
+      var decoded = parts.body
+      var rawHtml = parts.html
       // Every reading of the body out of one parse. The markers in the
       // plain-text one and the pictures they stand for are numbered by the same
       // walk over the same tree, so a marker cannot open somebody else's image
@@ -776,9 +807,22 @@ Item {
         root.selectedBody = decoded
         root.selectedImages = ready.plainText ? ready.plainText.images : []
       }
-      root.selectedAttachments = Mail.attachments(payload.payload)
-      root.selectedInvite = Calendar.fromPayload(payload.payload)
-      root.selectedUnsubscribe = Unsub.fromMessage(payload)
+      // A body never changes once fetched, so a live read that agrees with
+      // what the cache already painted is that record confirmed, not a new
+      // one to build: recomputing the attachments, the invite and the
+      // unsubscribe offer from the payload would repeat exactly the answer
+      // already on screen.
+      var cacheHit = root.cachedRecord !== null && rawHtml === root.cachedRecord.html
+      if (cacheHit) {
+        root.selectedAttachments = root.cachedRecord.attachments
+        // selectedInvite and selectedUnsubscribe are already the cache
+        // callback's own answer, and this read has nothing new to say about
+        // either, so both stay exactly as painted.
+      } else {
+        root.selectedAttachments = Mail.attachments(payload.payload)
+        root.selectedInvite = Calendar.fromPayload(payload.payload)
+        root.selectedUnsubscribe = Unsub.fromMessage(payload)
+      }
       // What the reader is showing, which is not `decoded` when the cache had
       // already painted this markup: that text came from `Mail.extractBody`'s
       // own flattening, and its images are numbered by a different walk than
@@ -792,18 +836,32 @@ Item {
         invite: root.selectedInvite,
         unsubscribe: root.selectedUnsubscribe
       })
-      bodyCache.put(messageId, record)
+      // A confirmed repeat writes nothing: the file on disk already holds
+      // this exact record, and body-cache.sh's rewrite — a queued write and
+      // the subprocess that runs it — would cost real time to produce bytes
+      // already there.
+      if (!cacheHit) bodyCache.put(messageId, record)
       // Gmail describes the calendar part rather than sending it whenever the
       // organiser's calendar named the file, which Google's own does — so the
       // meeting is one request away, and the card lands a moment after the
       // message it belongs to. The cache is written again with it, so it is
       // there at once the next time this message is opened.
-      root.loadInvite(messageId, serial, Calendar.pendingPart(payload.payload), record)
+      //
+      // Not asked again for a confirmed repeat that already resolved one:
+      // Gmail promises this same part, by reference, on every read of a
+      // message that carries it — without the `cacheHit` half of this check,
+      // reopening a message whose invitation was already on screen re-fetched
+      // its ICS file, and briefly cleared the card, every single time.
+      if (!(cacheHit && root.selectedInvite))
+        root.loadInvite(messageId, serial, Calendar.pendingPart(payload.payload), record)
       root.messages = Model.replaceById(root.messages, summary)
       root.previewMessages = Model.replaceById(root.previewMessages, summary)
       // Opening a message is the one place Gmail's own clients mark it read
       // without being asked, and a reader that leaves it bold is confusing.
-      if (summary.unread) root.act(messageId, "markRead", true)
+      // A preview render is not that: `willMarkRead` is false for a cursor
+      // move, so stepping through the list with j/k previews every body
+      // without quietly marking half a mailbox read.
+      if (willMarkRead && summary.unread) root.act(messageId, "markRead", true)
     })
   }
 
@@ -833,12 +891,27 @@ Item {
   // parse of the whole message to work out what was just worked out.
   function renderSource(source, withPlainText) {
     sourceHtml = String(source || "")
-    var ready = Html.sanitize(sourceHtml, ({
-      allowRemoteImages: remoteImagesAllowed,
-      remoteImageData: remoteImagesAllowed ? remoteImageData : null,
-      withPlainText: withPlainText === true,
-      withReader: true
-    }))
+    // Every message opens with remote images blocked — asking to see them is
+    // a separate, per-message action, and its own render is never what a
+    // second look at this same message would want back, since a fetched
+    // image lives in `remoteImageData` for exactly as long as this message
+    // stays selected. Restricting the cache to the blocked render is what
+    // keeps it a pure function of the two things in the key: nothing else
+    // `Html.sanitize` is given here ever varies for a fixed `source`.
+    var useCache = !remoteImagesAllowed
+    var cacheKey = useCache ? RenderCache.key(sourceHtml, withPlainText === true) : ""
+    var ready = useCache ? RenderCache.get(renderCache, cacheKey) : undefined
+    if (ready) {
+      renderCache = RenderCache.touch(renderCache, cacheKey)
+    } else {
+      ready = Html.sanitize(sourceHtml, ({
+        allowRemoteImages: remoteImagesAllowed,
+        remoteImageData: remoteImagesAllowed ? remoteImageData : null,
+        withPlainText: withPlainText === true,
+        withReader: true
+      }))
+      if (useCache) renderCache = RenderCache.put(renderCache, cacheKey, ready)
+    }
     selectedHtml = ready.html
     selectedDocument = ready.document
     selectedReaderDocument = ready.reader ? ready.reader.document : null
@@ -924,6 +997,7 @@ Item {
     selectedReaderEmpty = true
     selectedReaderRemoteImages = 0
     sourceHtml = ""
+    cachedRecord = null
     remoteImagesAllowed = false
     remoteImagesLoading = false
     remoteImageData = ({})

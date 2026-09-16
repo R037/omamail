@@ -235,9 +235,38 @@ Item {
     if (next === "") return
     cursorId = next
     revealCursorRow()
-    // Moving is not opening. This used to open whatever it landed on while the
-    // reader was up, which made stepping through a list a way to mark half of
-    // it read without having looked at any of it. Enter and "o" open.
+    // Restarted rather than fired straight away: a held j is a burst of these
+    // in one frame, and each one used to render the row it landed on for as
+    // long as it took the next key to land — a parse and a layout the cursor
+    // was already past by the time either finished. The row highlight and the
+    // scroll both stay immediate, above; only opening the body waits to see
+    // whether the cursor is still here to show it.
+    previewTimer.restart()
+  }
+
+  // Moving is not opening. This used to open whatever it landed on while the
+  // reader was up, which marked half a mailbox read without anyone having
+  // looked at it — select()'s markRead argument is what keeps this from
+  // reintroducing that: the reader pane, already on screen next to the list
+  // outside compact mode, renders the cursor's body without touching its
+  // unread flag. Enter and "o" are still what opens a message and marks it
+  // read. In compact mode there is no reader pane to preview into, so this is
+  // a no-op there and Enter/"o" remain the only way to see a body.
+  function previewCursor() {
+    if (!service || compact || cursorId === "") return
+    if (service.selectedId === cursorId) return
+    service.select(cursorId, false)
+  }
+
+  // 70ms is under what a held key repeats at but well past a single tap, so
+  // one j still previews at once for any ordinary reading pace and only a
+  // held or fast-repeated one coalesces — reading `cursorId` at the moment it
+  // fires rather than the one that scheduled it, so a run of j landing back
+  // where it started previews nothing at all.
+  Timer {
+    id: previewTimer
+    interval: 70
+    onTriggered: root.previewCursor()
   }
 
   // An answer needs the message it is answering, and opening one only starts
