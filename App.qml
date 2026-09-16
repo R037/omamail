@@ -180,6 +180,9 @@ Item {
     // the service keeps running while it is shut — so waiting for the next
     // change to seat the cursor leaves the first j with nowhere to move from.
     cursorId = Model.cursorAfterReload(service ? service.messages : [], cursorId)
+    // Seated is not shown: the cursor may already have been on this row when
+    // the window was last shut, and then nothing below fires for it.
+    previewTimer.restart()
     Qt.callLater(function() { focusScope.applyContextFocus() })
   }
 
@@ -268,6 +271,14 @@ Item {
     interval: 70
     onTriggered: root.previewCursor()
   }
+
+  // Wherever the cursor lands, the pane beside the list shows what it landed
+  // on — not only after j and k. Archiving, deleting or putting a message
+  // aside seats the cursor on its neighbour, and the list arriving seats it on
+  // the first row; each of those left the pane on the blank slate until the
+  // next key. Opening a row sets the cursor too, and by the time this fires
+  // that row is already the selection, so previewCursor has nothing to do.
+  onCursorIdChanged: previewTimer.restart()
 
   // An answer needs the message it is answering, and opening one only starts
   // the fetch — select() clears the summary and the body first. Beginning the
