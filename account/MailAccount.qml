@@ -12,6 +12,7 @@ import "../message/Message.js" as Mail
 import "../message/Calendar.js" as Calendar
 import "../message/Unsubscribe.js" as Unsub
 import "../message/Outbox.js" as Outbox
+import "../message/Snooze.js" as Snooze
 import "Model.js" as Model
 import "Accounts.js" as Accounts
 import "../providers/Registry.js" as Provider
@@ -94,8 +95,100 @@ Item {
   readonly property alias cache: cacheStore
 
   // The mailboxes this account has, which is a property of its provider rather
-  // than of the panel. The sidebar and the tab row draw whatever is here.
-  readonly property var mailboxes: Provider.mailboxes(providerId)
+  // than of the panel — plus the one that is Omamail's own, the reminders
+  // waiting to come back. The sidebar and the tab row draw whatever is here.
+  readonly property var mailboxes: Model.withSnoozedMailbox(Provider.mailboxes(providerId), canArchive)
+
+  // ------------------------------------------------------------- reminders
+  //
+  // Every account's records, handed down by the service that keeps them on
+  // disk; this account reads only its own. Setting one is an archive with a
+  // date attached, and the date coming due is an unarchive: no provider has a
+  // snooze to ask for, and the list of what is waiting is Omamail's alone.
+  property var snoozes: []
+  readonly property bool canSnooze: canArchive
+  readonly property var pendingSnoozes: Snooze.pending(snoozes, accountId)
+  readonly property var wokenSnoozes: Snooze.woken(snoozes, accountId)
+  // Summaries of the woken messages, fetched by id, so a reminder can sit above
+  // the inbox whether or not the page the list loaded reaches back that far.
+  property var wokenSummaries: ({})
+  property var wokenFetchHandle: null
+  // Ids a wake is already in flight for, so the minute tick does not send the
+  // same request twice while the first is still on the wire.
+  property var wakingIds: ({})
+  signal snoozeRecorded(var record)
+  signal snoozeWoken(string id)
+  signal snoozeForgotten(string id)
+
+  readonly property bool localMailbox: Model.isSnoozedMailbox(mailboxKey)
+    && searchQuery === "" && rawQuery === ""
+
+  onWokenSnoozesChanged: {
+    resurface()
+    fetchWokenSummaries()
+  }
+  onWokenSummariesChanged: resurface()
+  // The snoozed list is built from the records, so a record changing is the
+  // list changing.
+  onPendingSnoozesChanged: if (localMailbox && ready) loadMessages(false)
+
+  function resurface() {
+    messages = Model.surfaceReminders(messages, wokenSnoozes, wokenSummaries, mailboxKey)
+  }
+
+  function fetchWokenSummaries() {
+    if (!ready) return
+    var missing = []
+    for (var i = 0; i < wokenSnoozes.length; i++) {
+      if (!wokenSummaries[wokenSnoozes[i].id]) missing.push(wokenSnoozes[i].id)
+    }
+    if (missing.length === 0) return
+    abortRequest(wokenFetchHandle)
+    wokenFetchHandle = api.getMessages(missing, false, function(payloads, error) {
+      root.wokenFetchHandle = null
+      if (!payloads || payloads.length === 0) return
+      var now = new Date()
+      var next = {}
+      for (var key in root.wokenSummaries) next[key] = root.wokenSummaries[key]
+      for (var j = 0; j < payloads.length; j++) {
+        var summary = Mail.summarize(payloads[j], now)
+        next[summary.id] = summary
+      }
+      root.wokenSummaries = next
+    })
+  }
+
+  // What the service found due. Each is brought back unread and reported as
+  // woken; one that fails stays due and is tried again on the next tick.
+  function wakeDue(records) {
+    if (!ready) return
+    var list = Array.isArray(records) ? records : []
+    for (var i = 0; i < list.length; i++) wake(list[i])
+  }
+
+  function wake(record) {
+    var messageId = String(record.id || "")
+    if (messageId === "" || wakingIds[messageId] === true) return
+    var change = Model.labelChangesFor("wake")
+    var waking = {}
+    for (var key in wakingIds) waking[key] = true
+    waking[messageId] = true
+    wakingIds = waking
+    api.modifyMessage(messageId, change.add, change.remove, function(payload, error) {
+      var rest = {}
+      for (var key in root.wakingIds) if (key !== messageId) rest[key] = true
+      root.wakingIds = rest
+      if (error) return
+      root.snoozeWoken(messageId)
+      if (root.notifyNewMail) {
+        Quickshell.execDetached(["notify-send", "-a", "Omamail", "-i",
+          root.pluginDir + "/assets/omamail.svg",
+          "--", Snooze.prefixSubject(record.subject), String(record.from || "")])
+      }
+      // The inbox has a row it did not have a moment ago.
+      if (root.active && root.windowOpen && !root.localMailbox) root.loadMessages(false)
+    })
+  }
 
   // What the panel may offer for this account. A button the service cannot
   // honour is worse than a missing one: it fails after the user has committed
@@ -357,8 +450,11 @@ Item {
   // The provider decides what a mailbox and a typed search amount to: Gmail's
   // are search operators, IMAP's name a folder. Opaque from here on — it is
   // handed back to the client that produced it, and used as a cache key.
+  // The snoozed list never reaches a provider, but it still needs a name of its
+  // own here: this is the cache key, and the inbox's would paint the inbox.
   readonly property string effectiveQuery: rawQuery !== "" ? rawQuery
-    : Provider.query(providerId, mailboxKey, searchQuery, defaultQuery)
+    : (localMailbox ? "local:snoozed"
+      : Provider.query(providerId, mailboxKey, searchQuery, defaultQuery))
   readonly property bool hasMore: nextPageToken !== ""
   readonly property string resultSummary: Model.resultSummary(messages, resultEstimate, hasMore)
   readonly property string barTooltip: Model.barTooltip(setupState, accountEmail, inboxUnread,
@@ -557,7 +653,7 @@ Item {
     for (var i = 0; i < restored.length; i++)
       restored[i].time = Mail.relativeTime(restored[i].date, now)
 
-    messages = restored
+    messages = Model.surfaceReminders(restored, wokenSnoozes, wokenSummaries, mailboxKey)
     resultEstimate = entry.estimate
     nextPageToken = entry.nextPageToken
     listLoaded = true
@@ -590,6 +686,27 @@ Item {
     }
     listLoading = true
     var token = append ? nextPageToken : ""
+
+    // The snoozed list is the records, soonest first, and there is no second
+    // page of it: the provider is asked for the rows and nothing else.
+    if (localMailbox) {
+      var waiting = []
+      for (var w = 0; w < pendingSnoozes.length && w < maxMessages; w++) waiting.push(pendingSnoozes[w].id)
+      nextPageToken = ""
+      resultEstimate = waiting.length
+      if (waiting.length === 0) {
+        listLoading = false
+        listLoaded = true
+        messages = []
+        cacheStore.putQuery(cacheKey, ({ summaries: [], estimate: 0, nextPageToken: "" }))
+        lastError = ""
+        listRefreshed()
+        return
+      }
+      listHandle = api.newHandle()
+      fetchSummaries(waiting, false, serial)
+      return
+    }
 
     listHandle = api.listMessages(effectiveQuery, maxMessages, token,
       function(page, error) {
@@ -657,7 +774,7 @@ Item {
     seenIds = seen
     notificationsPrimed = true
 
-    messages = merged
+    messages = Model.surfaceReminders(merged, wokenSnoozes, wokenSummaries, mailboxKey)
     listLoaded = true
     lastError = ""
     lastSyncedMs = Date.now()
@@ -1030,7 +1147,9 @@ Item {
   // Every action moves the list immediately and reconciles afterwards. Waiting
   // for Google before the row moves makes the panel feel broken on a slow
   // connection, and the failure path puts the row back.
-  function act(id, action, quiet) {
+  // `detail` is the one thing an action can carry beyond its name: the moment
+  // a reminder is for.
+  function act(id, action, quiet, detail) {
     var messageId = String(id || "")
     if (!ready || messageId === "") return
     // Before the optimistic update, not after it. A key is not a button: `e`
@@ -1101,7 +1220,20 @@ Item {
         restore(error)
         return
       }
-      if (!quiet) root.note(root.actionLabel(action))
+      // The record follows the server, not the optimistic row: a reminder
+      // written for an archive that failed would come back for a message that
+      // never left.
+      if (action === "snooze") {
+        root.snoozeRecorded({
+          account: root.accountId, id: messageId, at: detail,
+          subject: before.subject, from: before.from ? before.from.display : ""
+        })
+      } else if (action === "unsnooze" || action === "archive" || action === "trash"
+        || action === "spam") {
+        // Dealing with a message is the end of its reminder, woken or not.
+        if (Snooze.find(root.snoozes, root.accountId, messageId)) root.snoozeForgotten(messageId)
+      }
+      if (!quiet) root.note(root.actionLabel(action, detail))
       root.refreshCounts()
     }
 
@@ -1134,7 +1266,9 @@ Item {
     }))
   }
 
-  function actionLabel(action) {
+  function actionLabel(action, detail) {
+    if (action === "snooze") return "Reminder set for " + Snooze.formatWhen(detail, new Date())
+    if (action === "unsnooze") return "Reminder removed"
     if (action === "archive") return "Archived"
     if (action === "trash") return "Moved to trash"
     if (action === "untrash") return "Restored"

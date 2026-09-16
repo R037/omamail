@@ -13,9 +13,9 @@ set -eu
 
 name=${1:-}
 case "$name" in
-  credentials.json|accounts.json|window.json|calendars.json) ;;
+  credentials.json|accounts.json|window.json|calendars.json|snoozes.json) ;;
   *)
-    printf '%s\n' 'usage: config-store.sh credentials.json|accounts.json|window.json|calendars.json' >&2
+    printf '%s\n' 'usage: config-store.sh credentials.json|accounts.json|window.json|calendars.json|snoozes.json' >&2
     exit 2
     ;;
 esac

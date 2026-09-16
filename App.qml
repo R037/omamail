@@ -334,14 +334,14 @@ Item {
   }
 
   // Acting on the open message closes it: it is about to leave this list.
-  function actOnCursor(action) {
+  function actOnCursor(action, detail) {
     if (!service || cursorId === "") return
     var acted = cursorId
     var wasOpen = currentView === "reader" && service.selectedId === acted
     // Worked out before the action, while the row still has neighbours.
     var next = Model.cursorAfterRemoval(service.messages, acted)
     var leaves = !Model.survivesAction(service.mailboxKey, action)
-    service.act(acted, action)
+    service.act(acted, action, false, detail)
     if (!leaves) return
     // The row is going and the cursor must not go with it: a cursor on a
     // message that is no longer listed cannot be found, so the next j restarts
@@ -353,6 +353,20 @@ Item {
     }
     cursorId = next
     revealCursorRow()
+  }
+
+  // The sheet that asks when. It opens on the row under the cursor with what
+  // the list already knows about it, and the answer comes back as an action
+  // on that same row.
+  function openSnoozePicker(id) {
+    if (!service || String(id || "") === "") return
+    if (!service.canSnooze) {
+      service.note(Model.actionUnavailable("snooze", service.providerId))
+      return
+    }
+    var summary = Model.messageById(service.messages, [], id)
+    var existing = service.snoozeFor(id)
+    snoozePicker.openFor(id, summary ? summary.subject : "", existing ? existing.at : 0)
   }
 
   function goMailbox(key) {
@@ -400,6 +414,7 @@ Item {
       if (service && cursorId !== "") service.toggleStar(cursorId)
       return
     }
+    if (id === "snooze") return openSnoozePicker(cursorId)
     if (id === "markRead") return actOnCursor("markRead")
     if (id === "markUnread") return actOnCursor("markUnread")
     if (id === "reply") return composeFromCursor("reply")
@@ -1484,6 +1499,25 @@ Item {
         }
       }
 
+      SnoozePicker {
+        id: snoozePicker
+        anchors.fill: parent
+        textColor: root.foreground
+        accentColor: root.accent
+        dimColor: root.dim
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        onChosen: function(id, at) {
+          root.cursorId = id
+          root.actOnCursor("snooze", at)
+        }
+        onRemoved: function(id) {
+          root.cursorId = id
+          root.actOnCursor("unsnooze")
+        }
+      }
+
       AccountRemovalDialog {
         id: accountRemovalDialog
         anchors.fill: parent
@@ -1526,6 +1560,7 @@ Item {
           root.cursorId = id
           root.actOnCursor(action)
         }
+        onSnoozeRequested: function(id) { root.openSnoozePicker(id) }
       }
 
       ShortcutHelp {

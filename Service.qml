@@ -11,6 +11,7 @@ import "providers/Registry.js" as Provider
 import "bar/Preview.js" as Preview
 import "calendar/Sources.js" as CalendarSources
 import "message/Outbox.js" as Outbox
+import "message/Snooze.js" as Snooze
 import "message/Html.js" as Html
 
 // Every mailbox on this machine, and whichever one is on screen.
@@ -304,6 +305,70 @@ Item {
   // Dropping it is what made adding a mailbox undo itself: the new account was
   // never written, and the watcher then read the older file back over it.
   property bool accountsSaveQueued: false
+
+  // ------------------------------------------------------------- reminders
+  //
+  // One file for every account's reminders, beside the account list rather
+  // than in any account's cache: a cache can be cleared, and a reminder that
+  // vanished with it would be a message lost in the archive.
+  property var snoozes: []
+  property bool snoozesLoaded: false
+  property string snoozesWritePayload: ""
+  property bool snoozesSaveQueued: false
+
+  readonly property bool canSnooze: !!current && current.canSnooze
+  readonly property var pendingSnoozes: current ? current.pendingSnoozes : []
+
+  function applySnoozes(raw) {
+    snoozes = Snooze.load(raw)
+    snoozesLoaded = true
+    wakeDue()
+  }
+
+  function saveSnoozes() {
+    if (!snoozesLoaded) return
+    if (snoozesWriter.running) {
+      snoozesSaveQueued = true
+      return
+    }
+    snoozesSaveQueued = false
+    snoozesWritePayload = Snooze.serialize(snoozes)
+    snoozesWriter.command = [pluginDir + "/scripts/config-store.sh", "snoozes.json"]
+    snoozesWriter.running = true
+  }
+
+  function snoozeFor(id) {
+    return current ? Snooze.find(snoozes, current.accountId, String(id || "")) : null
+  }
+
+  function recordSnooze(record) {
+    snoozes = Snooze.put(snoozes, record)
+    saveSnoozes()
+  }
+
+  function forgetSnooze(account, id) {
+    snoozes = Snooze.remove(snoozes, account, id)
+    saveSnoozes()
+  }
+
+  function markSnoozeWoken(account, id) {
+    snoozes = Snooze.markWoken(snoozes, account, id)
+    saveSnoozes()
+  }
+
+  // Every account looks for what has come due, once a minute and whenever it
+  // becomes ready — so a reminder that fell due while the shell was off fires
+  // on the first tick after it comes back.
+  function wakeDue() {
+    if (!snoozesLoaded) return
+    var nowMs = Date.now()
+    for (var i = 0; i < accountHosts.count; i++) {
+      var host = accountHosts.objectAt(i)
+      if (!host || !host.ready || host.accountId === "") continue
+      var due = Snooze.due(snoozes, host.accountId, nowMs)
+      if (due.length > 0) host.wakeDue(due)
+    }
+  }
 
   function saveAccounts() {
     if (!accountsLoaded) return
@@ -662,7 +727,7 @@ Item {
   function selectMailbox(key) { if (current) current.selectMailbox(key) }
   function search(text) { if (current) current.search(text) }
   function selectLabel(name) { if (current) current.selectLabel(name) }
-  function act(id, action, quiet) { if (current) current.act(id, action, quiet) }
+  function act(id, action, quiet, detail) { if (current) current.act(id, action, quiet, detail) }
   function toggleStar(id) { if (current) current.toggleStar(id) }
   function markAllRead() { if (current) current.markAllRead() }
   function send(fields) { return current ? current.send(fields) : false }
@@ -840,9 +905,16 @@ Item {
       // Every mailbox obeys the one answer: it is about what the reader is
       // willing to tell a sender, not about which account the mail came to.
       alwaysShowImages: root.alwaysShowImages
+      snoozes: root.snoozes
 
       onAccountIdentified: function(email) { root.nameAccount(index, email) }
-      onReadyChanged: root.recount()
+      onReadyChanged: {
+        root.recount()
+        if (ready) Qt.callLater(root.wakeDue)
+      }
+      onSnoozeRecorded: function(record) { root.recordSnooze(record) }
+      onSnoozeWoken: function(id) { root.markSnoozeWoken(accountId, id) }
+      onSnoozeForgotten: function(id) { root.forgetSnooze(accountId, id) }
       onInboxUnreadChanged: root.recount()
       onReplySent: root.replySent()
 
@@ -903,6 +975,41 @@ Item {
     onFileChanged: reload()
     // No list yet is the ordinary first-run state, not an error.
     onLoadFailed: root.applyAccounts("")
+  }
+
+  FileView {
+    id: snoozesFile
+    path: {
+      var home = Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
+      return home + "/omamail/snoozes.json"
+    }
+    printErrors: false
+    onLoaded: root.applySnoozes(text())
+    // No reminders yet is the ordinary state, not an error.
+    onLoadFailed: root.applySnoozes("")
+  }
+
+  Process {
+    id: snoozesWriter
+    stdinEnabled: true
+    stdout: StdioCollector { waitForEnd: true }
+    stderr: StdioCollector { waitForEnd: true }
+    onStarted: {
+      write(root.snoozesWritePayload + "\n")
+      root.snoozesWritePayload = ""
+    }
+    onExited: {
+      root.snoozesWritePayload = ""
+      if (root.snoozesSaveQueued) root.saveSnoozes()
+    }
+  }
+
+  Timer {
+    id: wakeTimer
+    interval: 60000
+    repeat: true
+    running: root.snoozesLoaded
+    onTriggered: root.wakeDue()
   }
 
   Process {

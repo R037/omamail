@@ -149,6 +149,10 @@ function survivesAction(mailboxKey, action) {
   if (verb === "trash") return key === "trash"
   if (verb === "untrash") return key !== "trash"
   if (verb === "archive") return key !== "inbox" && key !== "unread"
+  // A reminder takes the message out of the inbox the way archiving does; in
+  // the snoozed list it only changes the date, so the row stays.
+  if (verb === "snooze") return key !== "inbox" && key !== "unread"
+  if (verb === "unsnooze") return key !== "snoozed"
   if (verb === "markRead") return key !== "unread"
   if (verb === "unstar") return key !== "starred"
   return true
@@ -162,6 +166,12 @@ function labelChangesFor(action) {
   if (action === "archive") return { add: [], remove: ["INBOX"] }
   if (action === "unarchive") return { add: ["INBOX"], remove: [] }
   if (action === "spam") return { add: ["SPAM"], remove: ["INBOX"] }
+  // On the server a reminder is an archive, and taking it back is an
+  // unarchive: no provider has a snooze of its own to ask for. When the
+  // moment comes the message is brought back unread, so it reads as new.
+  if (action === "snooze") return { add: [], remove: ["INBOX"] }
+  if (action === "unsnooze") return { add: ["INBOX"], remove: [] }
+  if (action === "wake") return { add: ["INBOX", "UNREAD"], remove: [] }
   return null
 }
 
@@ -175,9 +185,97 @@ function labelChangesFor(action) {
 function actionCapability(action) {
   var verb = String(action || "")
   if (verb === "archive" || verb === "unarchive") return "archive"
+  if (verb === "snooze" || verb === "unsnooze" || verb === "wake") return "archive"
   if (verb === "star" || verb === "unstar") return "star"
   if (verb === "spam") return "spam"
   return ""
+}
+
+// ---------------------------------------------------------------- reminders
+
+var SNOOZED_MAILBOX = { key: "snoozed", label: "Snoozed", icon: "clock", optional: true, local: true }
+
+// The provider's mailboxes and, where the provider can archive, the one list
+// that is Omamail's own: what has been put aside and when it comes back. A
+// mailbox the provider cannot honour is a row that would always be empty.
+function withSnoozedMailbox(mailboxes, canArchive) {
+  var boxes = Array.isArray(mailboxes) ? mailboxes.slice() : []
+  if (canArchive !== true) return boxes
+  for (var i = 0; i < boxes.length; i++) {
+    if (boxes[i] && boxes[i].key === SNOOZED_MAILBOX.key) return boxes
+  }
+  boxes.push(SNOOZED_MAILBOX)
+  return boxes
+}
+
+function isSnoozedMailbox(key) {
+  return String(key || "") === SNOOZED_MAILBOX.key
+}
+
+// A woken reminder sits above the inbox rather than back at the date it
+// arrived, which for a two-week reminder is two pages down. `woken` is the
+// records in the order they should sit, `extra` the summaries fetched for the
+// ones the loaded page does not hold, keyed by id. Every reminder in the
+// resulting list carries `reminder: true`, which is what draws its prefix.
+//
+// Only the inbox and its unread view are reordered: a reminder in Starred or
+// a search is a row like any other, and it still says what it is.
+function surfaceReminders(messages, woken, extra, mailboxKey) {
+  var list = Array.isArray(messages) ? messages : []
+  var records = Array.isArray(woken) ? woken : []
+  var fetched = extra && typeof extra === "object" ? extra : {}
+  var key = String(mailboxKey || "inbox")
+  var wokenIds = {}
+  for (var r = 0; r < records.length; r++) wokenIds[records[r].id] = true
+
+  var flagged = []
+  for (var i = 0; i < list.length; i++) {
+    var summary = list[i]
+    var isReminder = wokenIds[summary.id] === true
+    if (isReminder !== (summary.reminder === true)) {
+      var copy = {}
+      for (var field in summary) copy[field] = summary[field]
+      copy.reminder = isReminder
+      flagged.push(copy)
+    } else {
+      flagged.push(summary)
+    }
+  }
+  if (key !== "inbox" && key !== "unread") return flagged
+
+  var pinned = []
+  var pinnedIds = {}
+  for (var w = 0; w < records.length; w++) {
+    var id = records[w].id
+    var known = null
+    for (var k = 0; k < flagged.length; k++) {
+      if (flagged[k].id === id) { known = flagged[k]; break }
+    }
+    if (!known && fetched[id]) {
+      known = {}
+      for (var name in fetched[id]) known[name] = fetched[id][name]
+      known.reminder = true
+    }
+    if (!known) continue
+    pinned.push(known)
+    pinnedIds[id] = true
+  }
+  var rest = []
+  for (var j = 0; j < flagged.length; j++) {
+    if (pinnedIds[flagged[j].id] !== true) rest.push(flagged[j])
+  }
+  return pinned.concat(rest)
+}
+
+var REMINDER_PREFIX = "Reminder: "
+
+// The subject as a row or the reader shows it. Display only, so the sender's
+// own subject is what a reply quotes and what a search matches.
+function displaySubject(summary) {
+  if (!summary) return ""
+  var subject = String(summary.subject === undefined || summary.subject === null ? "" : summary.subject)
+  if (summary.reminder !== true) return subject
+  return subject.indexOf(REMINDER_PREFIX) === 0 ? subject : REMINDER_PREFIX + subject
 }
 
 // What to say instead of doing it. Named after the thing the service does not

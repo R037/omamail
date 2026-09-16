@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Ui
 import "../components"
+import "../account/Model.js" as Model
 
 Column {
   id: root
@@ -48,7 +49,7 @@ Column {
         spacing: Style.space(2)
         Text {
           width: parent.width
-          text: mailRow.modelData.subject || "(no subject)"
+          text: Model.displaySubject(mailRow.modelData) || "(no subject)"
           color: root.textColor
           font.family: root.panelFontFamily
           font.pixelSize: Style.font.bodySmall

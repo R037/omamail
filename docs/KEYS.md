@@ -92,6 +92,7 @@ used to exist, and they had.
 | `archive` | `e` | mail | Archive |
 | `trash` | `d` | mail | Move to trash |
 | `star` | `s` | mail | Star or unstar |
+| `snooze` | `h` | mail | Remind me later |
 | `markRead` | `Shift+I` | mail | Mark read |
 | `markUnread` | `Shift+U` | mail | Mark unread |
 | `reply` | `r` | mail | Reply |

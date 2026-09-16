@@ -493,3 +493,58 @@ assert.strictEqual(model.mailboxAfterAccountSwitch("unread", [
 assert.strictEqual(model.mailboxAfterAccountSwitch("starred", [
   { key: "inbox" }, { key: "unread" }
 ]), "")
+
+// -------------------------------------------------------------- reminders
+
+assert.strictEqual(model.survivesAction("inbox", "snooze"), false, "a reminder leaves the inboxRows")
+assert.strictEqual(model.survivesAction("unread", "snooze"), false)
+assert.strictEqual(model.survivesAction("snoozed", "snooze"), true, "re-snoozing only moves the date")
+assert.strictEqual(model.survivesAction("starred", "snooze"), true)
+assert.strictEqual(model.survivesAction("snoozed", "unsnooze"), false)
+assert.strictEqual(model.survivesAction("inbox", "unsnooze"), true)
+deepEqual(model.labelChangesFor("snooze"), { add: [], remove: ["INBOX"] }, "a snooze is an archive on the server")
+deepEqual(model.labelChangesFor("unsnooze"), { add: ["INBOX"], remove: [] })
+deepEqual(model.labelChangesFor("wake"), { add: ["INBOX", "UNREAD"], remove: [] }, "a woken message comes back unread")
+assert.strictEqual(model.actionCapability("snooze"), "archive")
+assert.strictEqual(model.actionCapability("unsnooze"), "archive")
+assert.strictEqual(model.actionCapability("wake"), "archive")
+
+deepEqual(model.withSnoozedMailbox([{ key: "inbox" }], true).map(b => b.key), ["inbox", "snoozed"])
+deepEqual(model.withSnoozedMailbox([{ key: "inbox" }], false).map(b => b.key), ["inbox"],
+  "no snoozed list where nothing can be archived")
+deepEqual(model.withSnoozedMailbox([{ key: "inbox" }, { key: "snoozed" }], true).map(b => b.key),
+  ["inbox", "snoozed"], "never twice")
+assert.strictEqual(model.isSnoozedMailbox("snoozed"), true)
+assert.strictEqual(model.isSnoozedMailbox("inbox"), false)
+
+const inboxRows = [{ id: "a", subject: "A" }, { id: "b", subject: "B" }, { id: "c", subject: "C" }]
+const woken = [{ id: "c", at: 2 }, { id: "z", at: 1 }]
+const fetchedZ = { z: { id: "z", subject: "Z" } }
+
+deepEqual(model.surfaceReminders(inboxRows, woken, fetchedZ, "inbox"), [
+  { id: "c", subject: "C", reminder: true },
+  { id: "z", subject: "Z", reminder: true },
+  { id: "a", subject: "A" },
+  { id: "b", subject: "B" }
+], "woken reminders go to the top in record order, fetched ones included")
+deepEqual(model.surfaceReminders(inboxRows, woken, {}, "inbox").map(m => m.id), ["c", "a", "b"],
+  "a woken message nobody has fetched yet is not invented")
+deepEqual(model.surfaceReminders(inboxRows, woken, fetchedZ, "starred"), [
+  { id: "a", subject: "A" },
+  { id: "b", subject: "B" },
+  { id: "c", subject: "C", reminder: true }
+], "elsewhere the order is the list's own and only the flag is set")
+deepEqual(model.surfaceReminders(inboxRows, [], {}, "inbox").map(m => m.reminder === true), [false, false, false])
+deepEqual(model.surfaceReminders([{ id: "c", subject: "C", reminder: true }], [], {}, "inbox"),
+  [{ id: "c", subject: "C", reminder: false }], "a reminder that was dealt with loses its flag")
+const already = [{ id: "a", subject: "A", reminder: false }]
+assert.strictEqual(model.surfaceReminders(already, [], {}, "inbox")[0], already[0],
+  "a row whose flag is already right is the same object")
+deepEqual(model.surfaceReminders(null, null, null, null), [])
+
+assert.strictEqual(model.displaySubject({ subject: "Lunch", reminder: true }), "Reminder: Lunch")
+assert.strictEqual(model.displaySubject({ subject: "Lunch" }), "Lunch")
+assert.strictEqual(model.displaySubject({ subject: "Reminder: Lunch", reminder: true }), "Reminder: Lunch")
+assert.strictEqual(model.displaySubject(null), "")
+
+console.log("test_model.js reminders ok")

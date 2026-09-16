@@ -149,6 +149,11 @@ Canvas {
       move(1.5, 1.5); line(7.6, 1.5); line(14.5, 8.4); line(8.4, 14.5)
       line(1.5, 7.6); ctx.closePath()
       move(5.7, 4.5); arc(4.5, 4.5, 1.2, 0, Math.PI * 2)
+    } else if (root.name === "clock") {
+      // A dial with the hands at ten past ten, which is the one position that
+      // still reads as a clock at 13px.
+      move(14.5, 8); arc(8, 8, 6.5, 0, Math.PI * 2)
+      move(8, 4.2); line(8, 8); line(10.8, 9.8)
     } else if (root.name === "gmail" || root.name === "mail") {
       // The Gmail mark: the envelope body, with the M fold inset inside it. A
       // plain envelope with a V fold is the generic mail glyph — the M is the

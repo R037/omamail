@@ -37,6 +37,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/SearchBar.qml \
 	components/AppMenu.qml \
 	components/AccountSwitcher.qml \
+	components/SnoozePicker.qml \
 	components/AccountRemovalDialog.qml \
 	components/BackBar.qml \
 	components/UserBar.qml \
@@ -75,6 +76,7 @@ test-js:
 	node tests/test_bar_preview.js
 	node tests/test_unsubscribe.js
 	node tests/test_mailto.js
+	node tests/test_snooze.js
 	node tests/test_html.js
 	node tests/test_cache.js
 	node tests/test_render_cache.js

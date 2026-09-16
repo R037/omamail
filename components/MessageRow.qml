@@ -1,6 +1,7 @@
 import QtQuick
 import qs.Commons
 import qs.Ui
+import "../account/Model.js" as Model
 
 // One message in the list. Unread is carried by weight and by the dot on the
 // left, never by colour alone — the accent is a theme value that some themes
@@ -92,7 +93,7 @@ Rectangle {
         // looks like markup into rich text, and rich text with an <img> in it is
         // a fetch — the same beacon the message body is stripped of.
         textFormat: Text.PlainText
-        text: root.summary.subject
+        text: Model.displaySubject(root.summary)
         color: root.textColor
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.body

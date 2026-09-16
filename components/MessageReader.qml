@@ -5,6 +5,7 @@ import qs.Ui
 import "../message/Html.js" as Html
 import "../message/Message.js" as Mail
 import "../message/Mailto.js" as Mailto
+import "../account/Model.js" as Model
 
 // The right column. The body goes through Qt's own rich text engine — a real
 // HTML renderer, not a browser — after Html.sanitize has removed what Qt would
@@ -246,7 +247,7 @@ Item {
         // looks like markup into rich text, and rich text with an <img> in it is
         // a fetch — the same beacon the message body is stripped of.
         textFormat: Text.PlainText
-        text: root.summary ? root.summary.subject : ""
+        text: Model.displaySubject(root.summary)
         color: root.textColor
         font.family: root.panelFontFamily
         font.pixelSize: Style.font.subtitle

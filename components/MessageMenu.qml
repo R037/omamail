@@ -23,7 +23,7 @@ Item {
   property real anchorY: 0
   property int cursorIndex: -1
   readonly property var menuRows: [replyRow, replyAllRow, forwardRow, archiveRow,
-    trashRow, spamRow, readRow, starRow, browserRow]
+    snoozeRow, trashRow, spamRow, readRow, starRow, browserRow]
   readonly property bool opened: menu.opened
   readonly property var summary: {
     if (!service || messageId === "") return null
@@ -36,6 +36,7 @@ Item {
 
   signal composeRequested(string mode, string id)
   signal actionRequested(string action, string id)
+  signal snoozeRequested(string id)
 
   anchors.fill: parent
   z: 50
@@ -135,6 +136,19 @@ Item {
         visible: !root.service || root.service.canArchive
         text: "Archive"
         onActivated: root.run("archive")
+      }
+      // A reminder is an archive with a date, so it sits beside Archive and
+      // is offered exactly where Archive is.
+      MenuRow {
+        id: snoozeRow
+        visible: !root.service || root.service.canSnooze
+        text: root.service && root.service.snoozeFor(root.messageId)
+          ? "Change the reminder..." : "Remind me later..."
+        onActivated: {
+          var id = root.messageId
+          menu.close()
+          root.snoozeRequested(id)
+        }
       }
       MenuRow { id: trashRow; text: "Move to trash"; tone: root.urgentColor; onActivated: root.run("trash") }
       MenuRow {
