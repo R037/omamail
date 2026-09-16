@@ -18,7 +18,6 @@ Rectangle {
   // has no other use for one.
   property bool canArchive: true
   property bool hasCursor: false
-  property bool selected: false
 
   signal activated()
   signal starToggled()
@@ -31,9 +30,11 @@ Rectangle {
   width: parent ? parent.width : 0
   implicitHeight: body.implicitHeight + Style.space(14)
   radius: Style.cornerRadius
-  color: selected
-    ? Style.selectedFillFor(textColor, accentColor)
-    : (hot ? Style.hoverFillFor(textColor, accentColor) : "transparent")
+  // One fill, for the cursor. The message in the reader used to have a
+  // darker one of its own, but the reader now follows the cursor, so that
+  // fill only ever trailed this one by the preview delay and read as a
+  // flicker.
+  color: hot ? Style.hoverFillFor(textColor, accentColor) : "transparent"
 
   MouseArea {
     id: mouse
