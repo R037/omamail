@@ -44,6 +44,7 @@ Item {
   signal composeRequested(string mode)
   signal mailtoRequested(string url)
   signal actionRequested(string action)
+  signal copyRequested(string text)
 
   function openLink(url) {
     if (Mailto.parse(url)) {
@@ -479,6 +480,20 @@ Item {
       selectionColor: Style.selectionFillFor(root.textColor, root.accentColor)
       selectedTextColor: root.textColor
       font.family: root.panelFontFamily
+      // Selecting text copies it, the way a terminal's primary selection does
+      // — nobody reads a message to retype it, they read it to paste it
+      // somewhere else. Debounced rather than fired on every character a drag
+      // crosses, so dragging across a long message writes the clipboard once
+      // at rest instead of on every pixel of the drag. Guarded against the
+      // empty string so clicking to place the cursor, which also fires this,
+      // does not blank out whatever was copied a moment ago.
+      onSelectedTextChanged: copySelectionTimer.restart()
+
+      Timer {
+        id: copySelectionTimer
+        interval: 150
+        onTriggered: if (bodyText.selectedText !== "") root.copyRequested(bodyText.selectedText)
+      }
       // Body text, where the chrome around it is bodySmall: this is the one
       // long-form thing in the window and the only one that is read rather than
       // scanned. At bodySmall it was 11px against the 9pt — twelve — of the

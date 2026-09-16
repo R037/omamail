@@ -402,12 +402,48 @@ function escapeMarkup(text) {
   return value.replace(/</g, "&lt;").replace(/>/g, "&gt;")
 }
 
+// A conservative address: a run of the ordinary unquoted local-part characters,
+// then a domain of dot-separated labels. Not the whole of RFC 5322 — mail
+// bodies do not write the quoted-string form, and a permissive match here
+// would as often swallow the sender's own trailing punctuation as find a real
+// address. Each label starts and ends on an alphanumeric, so "reach me at
+// x@y.com." never pulls the sentence's own full stop into the domain.
+var EMAIL_SOURCE = "[A-Za-z0-9][A-Za-z0-9._%+-]*@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?"
+  + "(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+"
+
+// A bare address in the message's own words, wrapped the same way a sender's
+// own `<a href="mailto:...">` already survives sanitize — so "reach me at
+// x@y.com" is one click from a reply exactly as if the sender had linked it.
+// Only ever called on a text node no anchor already wraps.
+function linkifyEmails(text) {
+  var value = String(text)
+  if (value.indexOf("@") < 0) return escapeMarkup(value)
+  var pattern = new RegExp(EMAIL_SOURCE, "g")
+  var out = ""
+  var last = 0
+  var match
+  while ((match = pattern.exec(value)) !== null) {
+    out += escapeMarkup(value.slice(last, match.index))
+    out += "<a href=\"mailto:" + match[0] + "\">" + escapeMarkup(match[0]) + "</a>"
+    last = pattern.lastIndex
+  }
+  out += escapeMarkup(value.slice(last))
+  return out
+}
+
 // Written into one array and joined once. Returning a string per level builds a
 // fresh copy of everything below it at every level, which on a document a few
 // hundred elements deep is most of the time this file spends.
-function serializeInto(node, out, fit) {
+//
+// `linked` tracks whether an `<a>` ancestor already wraps this node: a bare
+// address is turned into a link of its own, but an address that is already
+// the text of a link is left alone — Qt's rich text does not draw a link
+// nested inside a link, and an address that is already a link needs no help
+// becoming one.
+function serializeInto(node, out, fit, linked) {
   if (node.type === "text") {
-    out.push(escapeMarkup(node.text))
+    if (linked) out.push(escapeMarkup(node.text))
+    else out.push(linkifyEmails(node.text))
     return
   }
   if (node.type !== "root") {
@@ -418,7 +454,8 @@ function serializeInto(node, out, fit) {
     }
     out.push(">")
   }
-  for (var i = 0; i < node.children.length; i++) serializeInto(node.children[i], out, fit)
+  var childLinked = linked || node.name === "a"
+  for (var i = 0; i < node.children.length; i++) serializeInto(node.children[i], out, fit, childLinked)
   if (node.type !== "root") out.push("</" + node.name + ">")
 }
 
@@ -426,7 +463,7 @@ function serializeInto(node, out, fit) {
 // exactly what the parse produced and can be handed to the next width.
 function serialize(node, fit) {
   var out = []
-  serializeInto(node, out, fit)
+  serializeInto(node, out, fit, false)
   return out.join("")
 }
 
@@ -2842,6 +2879,12 @@ function plainTextDocument(text, colors, linkImages) {
   var background = String(palette.background || "")
   var link = String(palette.link || foreground)
   var body = preserveSpacing(escapeText(readableText(text)))
+  // Plain text has no tree to walk, but the escaped body has no "<" or ">" in
+  // it either, so a bare address can be matched and wrapped the same way it
+  // is in the other two modes.
+  body = body.replace(new RegExp(EMAIL_SOURCE, "g"), function(match) {
+    return "<a href=\"mailto:" + match + "\">" + match + "</a>"
+  })
   if (linkImages) {
     body = body.replace(/\[image (\d+)\]/g, function(match, index) {
       return "<a href=\"" + IMAGE_LINK_PREFIX + index + "\">" + match + "</a>"

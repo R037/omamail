@@ -1150,6 +1150,7 @@ Item {
               root.actOnCursor(action)
             }
           }
+          onCopyRequested: function(text) { root.copyText(text) }
         }
 
         // Composing takes the whole body. Omarchy's panel mechanism would give
