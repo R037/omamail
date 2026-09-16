@@ -15,11 +15,15 @@ const ROOT = path.dirname(__dirname)
 // the thing lives.
 const IMPORT_SOURCE = '^\\s*\\.import\\s+"([^"]+)"\\s+as\\s+(\\w+)\\s*$'
 
-function load(relativePath) {
+// `globals` seeds the context before the module runs — nothing this
+// repository's own modules provide, only what the QML engine would: a `Qt`
+// object standing in for the one node has no equivalent of, so a test can
+// choose what its `atob` hands back without touching the module under test.
+function load(relativePath, globals) {
   const file = path.join(ROOT, relativePath)
   const raw = fs.readFileSync(file, "utf8")
 
-  const context = {}
+  const context = Object.assign({}, globals)
   vm.createContext(context)
 
   // Every match is collected before any of them is followed. A global regexp

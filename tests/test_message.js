@@ -43,6 +43,75 @@ assert.strictEqual(message.decodeBase64Url("aGVs\nbG8g\r\nd29ybGQ="), "hello wor
 assert.strictEqual(message.decodeBase64Url(""), "")
 assert.strictEqual(message.decodeBase64Url(null), "")
 
+// --------------------------------------------------------- the atob probe
+//
+// node has no `Qt`, so every test above exercises only the byte-by-byte
+// fallback — correct, but not the path a real mailbox actually runs through.
+// This module's own idea of what a build's `Qt.atob` hands back is not
+// something a test can ask for directly; what it can do is load three more
+// copies of the module, each seeded with a fake `Qt.atob` shaped like one of
+// the answers the probe knows about, and check the public functions built on
+// it still agree with the no-`Qt` instance above on every input — including
+// the one input where they are allowed to disagree in how they get there.
+
+function bufferToBase64Url(buffer) {
+  return buffer.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+}
+
+// Shaped like this build's own Qt: atob(standardBase64) returns text already
+// decoded as UTF-8, replacing a malformed byte with U+FFFD the way Qt's own
+// string construction does.
+const utf8Qt = load("message/Message.js", {
+  Qt: { atob: (b64) => Buffer.from(b64, "base64").toString("utf8") }
+})
+
+// Shaped like the documented Web API instead: atob returns the raw bytes,
+// one character per byte, still needing the UTF-8 pass this file already has.
+const binaryQt = load("message/Message.js", {
+  Qt: { atob: (b64) => Buffer.from(b64, "base64").toString("latin1") }
+})
+
+// A build offering nothing usable: no atob, and one that throws. Both must
+// leave the probe at "none" rather than let either failure reach a caller.
+const noAtobQt = load("message/Message.js", { Qt: {} })
+const throwingQt = load("message/Message.js", { Qt: { atob: () => { throw new Error("boom") } } })
+
+for (const sample of samples) {
+  const encoded = b64url(sample)
+  for (const build of [utf8Qt, binaryQt, noAtobQt, throwingQt]) {
+    assert.strictEqual(build.decodeBase64Url(encoded), sample,
+      "decodeBase64Url " + JSON.stringify(sample))
+    const html = { mimeType: "text/html; charset=UTF-8", body: { data: encoded } }
+    assert.strictEqual(build.decodePart(html), sample,
+      "decodePart " + JSON.stringify(sample))
+  }
+}
+
+// 0xff starts no valid UTF-8 sequence. A message claiming UTF-8 and shipping
+// this anyway is what the fast path must hand back to the slow one instead of
+// quietly turning into a replacement character — checked by requiring the
+// `Qt.atob`-backed builds to land on exactly what the no-`Qt` instance does,
+// rather than by hard-coding the mangled character here too.
+const malformedBytes = Buffer.from([0x48, 0xff, 0x6c, 0x6c, 0x6f]) // "H\xffllo"
+const malformedEncoded = bufferToBase64Url(malformedBytes)
+const malformedExpected = message.decodeBase64Url(malformedEncoded)
+assert.ok(malformedExpected.indexOf("�") < 0,
+  "the byte-by-byte path never produces a replacement character")
+for (const build of [utf8Qt, binaryQt]) {
+  assert.strictEqual(build.decodeBase64Url(malformedEncoded), malformedExpected)
+  const part = { mimeType: "text/plain; charset=UTF-8", body: { data: malformedEncoded } }
+  assert.strictEqual(build.decodePart(part), malformedExpected)
+}
+
+// A non-UTF-8 charset never takes the fast path at all — nothing above it
+// promises to reproduce Latin-1 or a header's own decoding, only UTF-8.
+{
+  const bytes = Buffer.from([0x48, 0xe9, 0x6c, 0x6c, 0x6f]) // "H\xe9llo" as Latin-1
+  const encoded = bufferToBase64Url(bytes)
+  const part = { mimeType: "text/plain; charset=ISO-8859-1", body: { data: encoded } }
+  assert.strictEqual(message.decodePart(part), utf8Qt.decodePart(part))
+}
+
 // ------------------------------------------------------- RFC 2047 headers
 //
 // Gmail decodes transfer encodings for part bodies but leaves headers exactly
@@ -127,6 +196,26 @@ assert.strictEqual(message.extractBody(nested).text, "inner plain")
 
 const htmlOnly = { mimeType: "text/html", body: { data: b64url("<p>Hi<br>there</p><script>x()</script>") } }
 deepEqual(message.extractBody(htmlOnly), { text: "Hi\nthere", source: "html" })
+
+// extractBody and extractHtml agree with extractParts's own fields, and — the
+// point of having one walk at all — a message with no text/plain part of its
+// own has its one text/html part decoded exactly once for both, not once for
+// each: `extractBody` wants it as the plain-text fallback source and
+// `extractHtml` wants it as markup, and until this was one function they each
+// asked their own walk to decode it.
+{
+  const parts = message.extractParts(htmlOnly)
+  deepEqual(parts.body, message.extractBody(htmlOnly))
+  assert.strictEqual(parts.html, message.extractHtml(htmlOnly))
+
+  let decodeCount = 0
+  const decodePart = message.decodePart
+  message.decodePart = function(part) { decodeCount++; return decodePart(part) }
+  message.extractParts(htmlOnly)
+  message.decodePart = decodePart
+  assert.strictEqual(decodeCount, 1,
+    "the shared html part is decoded once, not once per caller")
+}
 
 // A text/plain attachment is a file, not the message body.
 const withAttachment = {

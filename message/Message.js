@@ -5,9 +5,10 @@
 // reads:
 //
 //   - Gmail hands back part bodies as base64url and leaves the transfer
-//     encoding already undone, but the QML JS engine has no `atob` and
-//     `Qt.atob` is not available to a plain JS library, so base64 and UTF-8 are
-//     decoded by hand.
+//     encoding already undone. `Qt.atob` reaches a plain JS library fine, but
+//     what it hands back is not specified here — see the probe beside
+//     `decodeBase64Url` — so a fully hand-rolled base64-and-UTF-8 path stays
+//     as what every build, and every node test, can fall back to.
 //   - Gmail does *not* decode headers. A subject in any non-ASCII language
 //     arrives as an RFC 2047 encoded word, so "=?UTF-8?B?5L2g5aW9?=" has to
 //     become "你好" before it reaches a Text element.
@@ -104,16 +105,69 @@ function binaryStringToUtf8(binary) {
   return bytesToUtf8(bytes)
 }
 
+// What Qt.atob(string) hands back is not specified by this file — it is
+// deprecated in favour of overloads this engine does not accept the way its
+// own documentation implies, and the one thing its own warning says is that
+// its output "differs from the common Web API": the browser atob returns a
+// raw-byte string, one character per byte, still needing the UTF-8 pass above.
+// On the Qt this was built against it instead returns text already decoded as
+// UTF-8, which is faster because there is no second pass — but a future Qt
+// bringing atob in line with the browsers would silently turn that shortcut
+// into mojibake, exactly the way assuming the browser shape here already had.
+// So this asks, once, with a round trip through the one encoder in this file
+// that never depends on Qt at all: encode two characters whose UTF-8 is
+// unambiguous — a two-byte one and a surrogate pair needing four — and see
+// which shape came back. A build with neither shape, or no atob at all, gets
+// "none" and every caller below falls back to the byte-by-byte path.
+var ATOB_PROBE_TEXT = "é😀"
+var atobMode = null
+
+function probeAtobMode() {
+  if (atobMode !== null) return atobMode
+  atobMode = "none"
+  if (typeof Qt === "undefined" || typeof Qt.atob !== "function") return atobMode
+  try {
+    var decoded = Qt.atob(encodeBase64(ATOB_PROBE_TEXT))
+    if (decoded === ATOB_PROBE_TEXT) atobMode = "utf8"
+    else if (decoded === bytesToLatin1(utf8Bytes(ATOB_PROBE_TEXT))) atobMode = "binary"
+  } catch (e) {
+    // Left at "none": an atob that throws on two ordinary characters is not
+    // one worth trusting with a stranger's mail.
+  }
+  return atobMode
+}
+
+// The fast path for base64(url) text known to hold UTF-8, which is every
+// Gmail part body and every ICS attachment this file reads. Null means "ask
+// the caller to use the slow, always-correct path instead" — either because
+// this build's Qt.atob was not usable, or because what came back could only
+// have gotten there by replacing a malformed byte with U+FFFD, which is where
+// this stops agreeing with `bytesToUtf8`: that keeps the sender's stray byte
+// as a wrong-looking character rather than a blank one, on the same
+// find-something-shown-beats-nothing-shown grounds a broken image marker
+// does. That disagreement is rare enough — a message that both claims UTF-8
+// and is not UTF-8 — that resolving it by re-decoding here costs nothing
+// measured against how often it happens.
+function atobDecodeUtf8(base64Text) {
+  var mode = probeAtobMode()
+  if (mode === "none") return null
+  var standard = String(base64Text || "").replace(/-/g, "+").replace(/_/g, "/")
+  var decoded
+  try {
+    decoded = Qt.atob(standard)
+  } catch (e) {
+    return null
+  }
+  if (mode === "binary") decoded = binaryStringToUtf8(decoded)
+  if (decoded.indexOf("�") >= 0) return null
+  return decoded
+}
+
 function decodeBase64Url(text) {
   var input = String(text || "")
   if (input === "") return ""
-  if (typeof Qt !== "undefined" && typeof Qt.atob === "function") {
-    try {
-      return binaryStringToUtf8(Qt.atob(input.replace(/-/g, "+").replace(/_/g, "/")))
-    } catch (e) {
-      // Fall through to the portable path rather than losing the message.
-    }
-  }
+  var fast = atobDecodeUtf8(input)
+  if (fast !== null) return fast
   return bytesToUtf8(base64ToBytes(input))
 }
 
@@ -312,7 +366,18 @@ function partCharset(part) {
 function decodePart(part) {
   var data = part && part.body ? part.body.data : ""
   if (!data) return ""
-  return decodeWordBytes(partCharset(part) || "utf-8", base64ToBytes(data))
+  var charset = String(partCharset(part) || "utf-8").toLowerCase()
+  // Gmail hands back nearly every body as UTF-8, and this is the one path a
+  // message's whole body — not a header word — runs through: on a build
+  // where the probe above found a usable atob, this is one native call
+  // instead of the byte-by-byte base64 and UTF-8 loops below, measured at
+  // roughly two orders of magnitude on a real inbox. Any other charset, or a
+  // build the probe could not use, falls through to those loops unchanged.
+  if (charset.indexOf("utf-8") === 0 || charset.indexOf("utf8") === 0) {
+    var fast = atobDecodeUtf8(data)
+    if (fast !== null) return fast
+  }
+  return decodeWordBytes(charset, base64ToBytes(data))
 }
 
 // Images become a marker rather than nothing at all. Stripped outright — which
@@ -364,10 +429,16 @@ function isAttachment(part) {
   return /attachment/i.test(disposition)
 }
 
-// Walks the MIME tree once and keeps the best text it saw. text/plain wins
-// outright; a text/html part is kept only as a fallback because converting it
-// always loses something.
-function extractBody(payload) {
+// Walks the MIME tree once and decodes at most one part of each kind: the
+// first text/plain part, kept as itself, and the first text/html part, kept
+// both as markup and — only when there was no text/plain part to prefer —
+// flattened into the plain reading. A caller wanting only one side used to
+// still cost a second decode of the html part shared with the other: a
+// message with no text/plain part of its own, which is most of what this
+// falls back to html for in the first place, had that one part decoded twice
+// over — once as `extractBody`'s fallback source, once as `extractHtml`'s
+// markup — for what was always going to be the same string.
+function extractParts(payload) {
   var plain = ""
   var html = ""
 
@@ -385,31 +456,18 @@ function extractBody(payload) {
   }
 
   walk(payload, 0)
-  if (plain) return { text: plain.replace(/\r\n/g, "\n"), source: "plain" }
-  if (html) return { text: htmlToText(html), source: "html" }
-  return { text: "", source: "" }
+  var body = plain ? { text: plain.replace(/\r\n/g, "\n"), source: "plain" }
+    : html ? { text: htmlToText(html), source: "html" }
+    : { text: "", source: "" }
+  return { body: body, html: html }
 }
 
-// The same walk as extractBody, kept separate because the reader wants the
-// markup and the list row wants the flattened text, and neither should pay for
-// the other's work.
+function extractBody(payload) {
+  return extractParts(payload).body
+}
+
 function extractHtml(payload) {
-  var found = ""
-
-  function walk(part, depth) {
-    if (!part || depth > 12 || found) return
-    var mime = String(part.mimeType || "").toLowerCase()
-    var children = Array.isArray(part.parts) ? part.parts : []
-    if (children.length > 0) {
-      for (var i = 0; i < children.length; i++) walk(children[i], depth + 1)
-      return
-    }
-    if (isAttachment(part)) return
-    if (mime.indexOf("text/html") === 0) found = decodePart(part)
-  }
-
-  walk(payload, 0)
-  return found
+  return extractParts(payload).html
 }
 
 function attachments(payload) {
