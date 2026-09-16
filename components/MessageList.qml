@@ -22,6 +22,12 @@ Column {
   required property color dimColor
   required property string panelFontFamily
   property string cursorId: ""
+  // Where the pointer last actually was, in scene coordinates. Qt re-reports
+  // hover when content moves under a pointer that has not moved — every
+  // archive, delete and reload shifts the rows — and a row that lit up
+  // because it slid under a parked pointer read as a second cursor. A row
+  // draws its hover only for a pointer that arrived by moving.
+  property point pointerAt: Qt.point(-1, -1)
 
   signal messageActivated(string id)
   signal menuRequested(string id, real sceneX, real sceneY)
@@ -54,6 +60,8 @@ Column {
       dimColor: root.dimColor
       panelFontFamily: root.panelFontFamily
       hasCursor: root.cursorId === modelData.id
+      pointerAt: root.pointerAt
+      onPointerMoved: function(scenePoint) { root.pointerAt = scenePoint }
       canArchive: root.service.canArchive
       onActivated: root.messageActivated(modelData.id)
       onStarToggled: root.service.toggleStar(modelData.id)

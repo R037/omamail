@@ -18,14 +18,26 @@ Rectangle {
   // has no other use for one.
   property bool canArchive: true
   property bool hasCursor: false
+  // The list's record of where the pointer last moved to, so a row can tell
+  // a pointer that came to it from one it slid under.
+  property point pointerAt: Qt.point(-1, -1)
+  property bool pointerHere: false
 
   signal activated()
+  signal pointerMoved(point scenePoint)
   signal starToggled()
   signal archiveRequested()
   signal trashRequested()
   signal menuRequested(real sceneX, real sceneY)
 
-  readonly property bool hot: mouse.containsMouse || hasCursor
+  readonly property bool hot: (mouse.containsMouse && pointerHere) || hasCursor
+
+  function notePointer(x, y) {
+    var scene = mouse.mapToGlobal(x, y)
+    if (scene.x === pointerAt.x && scene.y === pointerAt.y) return
+    pointerHere = true
+    root.pointerMoved(Qt.point(scene.x, scene.y))
+  }
 
   width: parent ? parent.width : 0
   implicitHeight: body.implicitHeight + Style.space(14)
@@ -41,6 +53,9 @@ Rectangle {
     anchors.fill: parent
     hoverEnabled: true
     acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
+    onEntered: root.notePointer(mouseX, mouseY)
+    onPositionChanged: function(event) { root.notePointer(event.x, event.y) }
+    onExited: root.pointerHere = false
     onClicked: function(event) {
       if (event.button === Qt.RightButton) {
         var scene = mapToGlobal(event.x, event.y)
