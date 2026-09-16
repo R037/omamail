@@ -40,8 +40,6 @@ var BINDINGS = [
   { id: "open", keys: ["Return", "o"], contexts: MAIL,
     group: "Moving", label: "Open the selected message",
     hintKey: "o", hint: { list: "open", reader: "open" } },
-  { id: "backToList", keys: ["u"], contexts: ["reader"],
-    group: "Moving", label: "Back to the list" },
 
   { id: "archive", keys: ["e"], contexts: MAIL,
     group: "Acting", label: "Archive",
@@ -58,8 +56,13 @@ var BINDINGS = [
     hint: { list: "remind", reader: "remind" } },
   { id: "markRead", keys: ["Shift+I"], contexts: MAIL,
     group: "Acting", label: "Mark read" },
-  { id: "markUnread", keys: ["Shift+U"], contexts: MAIL,
-    group: "Acting", label: "Mark unread" },
+  // `u` used to be "back to the list", which Escape also is. A message that
+  // has been on screen a second is read, so the key that matters is the one
+  // that says "not this one": it marks the message unread and keeps it so
+  // for as long as it stays under the cursor.
+  { id: "markUnread", keys: ["u", "Shift+U"], contexts: MAIL,
+    group: "Acting", label: "Mark unread, and keep it unread while highlighted",
+    hintKey: "u", hint: { list: "unread", reader: "unread" } },
 
   // Answering works from the list too, the way the row's own menu does: the
   // message is opened first and the draft waits for it. Binding these to the

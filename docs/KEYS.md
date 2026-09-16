@@ -88,13 +88,12 @@ used to exist, and they had.
 | `cursorDown` | `j`, `Down` | mail | Move down |
 | `cursorUp` | `k`, `Up` | mail | Move up |
 | `open` | `Return`, `o` | mail | Open the selected message |
-| `backToList` | `u` | reader | Back to the list |
 | `archive` | `e` | mail | Archive |
 | `trash` | `d` | mail | Move to trash |
 | `star` | `s` | mail | Star or unstar |
 | `snooze` | `h` | mail | Remind me later |
 | `markRead` | `Shift+I` | mail | Mark read |
-| `markUnread` | `Shift+U` | mail | Mark unread |
+| `markUnread` | `u`, `Shift+U` | mail | Mark unread, and keep it unread while highlighted |
 | `reply` | `r` | mail | Reply |
 | `replyAll` | `a` | mail | Reply to all |
 | `forward` | `f` | mail | Forward |

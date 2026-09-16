@@ -278,7 +278,34 @@ Item {
   // the first row; each of those left the pane on the blank slate until the
   // next key. Opening a row sets the cursor too, and by the time this fires
   // that row is already the selection, so previewCursor has nothing to do.
-  onCursorIdChanged: previewTimer.restart()
+  onCursorIdChanged: {
+    previewTimer.restart()
+    // Leaving the message ends the hold: coming back to it is looking at it
+    // again, and looking at it for a second is reading it.
+    if (cursorId !== heldUnreadId) heldUnreadId = ""
+  }
+
+  // A message that has been on screen for a second has been read, the way it
+  // would have been in any client where showing it is opening it. A second
+  // rather than at once, so stepping through the list with j and k held down
+  // does not mark everything it passes over. `u` is the one exception: it
+  // says "not this one" and holds until the cursor moves away.
+  property string heldUnreadId: ""
+
+  Timer {
+    id: readTimer
+    interval: 1000
+    onTriggered: root.markShownRead()
+  }
+
+  function markShownRead() {
+    if (!service || !reader.visible) return
+    var id = service.selectedId
+    if (id === "" || id === heldUnreadId) return
+    var shown = service.selectedMessage
+    if (!shown || !shown.unread) return
+    service.act(id, "markRead", true)
+  }
 
   // An answer needs the message it is answering, and opening one only starts
   // the fetch — select() clears the summary and the body first. Beginning the
@@ -416,7 +443,6 @@ Item {
     if (id === "cursorDown") return moveCursor(1)
     if (id === "cursorUp") return moveCursor(-1)
     if (id === "open") return openMessage(cursorId)
-    if (id === "backToList") return backToList()
     if (id === "archive") return actOnCursor("archive")
     if (id === "trash") return actOnCursor("trash")
     // Through the same guard actOnCursor applies rather than around it:
@@ -427,7 +453,12 @@ Item {
     }
     if (id === "snooze") return openSnoozePicker(cursorId)
     if (id === "markRead") return actOnCursor("markRead")
-    if (id === "markUnread") return actOnCursor("markUnread")
+    if (id === "markUnread") {
+      // Held as well as marked: the reader is still showing this message,
+      // and a second from now it would mark it read again.
+      heldUnreadId = cursorId
+      return actOnCursor("markUnread")
+    }
     if (id === "reply") return composeFromCursor("reply")
     if (id === "replyAll") return composeFromCursor("replyAll")
     if (id === "forward") return composeFromCursor("forward")
@@ -535,6 +566,9 @@ Item {
     // opened the message and stopped there.
     function onSelectedBodyChanged() { Qt.callLater(root.resumeHeldCompose) }
     function onSelectedMessageChanged() { Qt.callLater(root.resumeHeldCompose) }
+    // The second starts when a message arrives in the pane, whatever put it
+    // there — a cursor move, a click, a reminder waking.
+    function onSelectedIdChanged() { readTimer.restart() }
 
     function onMessagesChanged() {
       root.cursorId = Model.cursorAfterReload(
