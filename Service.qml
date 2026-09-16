@@ -42,8 +42,13 @@ Item {
 
   readonly property string pluginId: manifest && manifest.id
     ? String(manifest.id) : "omamail"
-  readonly property string pluginDir: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) : ""
+  // Omarchy strips private manifest metadata — manifest.__sourceDir among it
+  // — before a third-party plugin sees its manifest, so the helpers are found
+  // from this file's own location: Service.qml lives at the plugin root, one
+  // directory above scripts/. Decoded, because a home directory with a space
+  // in it arrives percent-encoded in a URL and not in a shell argument.
+  readonly property string pluginDir: decodeURIComponent(String(Qt.resolvedUrl("."))
+    .replace(/^file:\/\//, "")).replace(/\/$/, "")
 
   readonly property var defaultSettingValues: ({
     refreshIntervalSec: 120,
