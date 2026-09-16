@@ -77,6 +77,7 @@ test-js:
 	node tests/test_mailto.js
 	node tests/test_html.js
 	node tests/test_cache.js
+	node tests/test_render_cache.js
 	node tests/test_model.js
 	node tests/test_keymap.js
 	node tests/test_accounts.js
