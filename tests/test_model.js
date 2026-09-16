@@ -373,8 +373,9 @@ assert.strictEqual(model.actionUnavailable("spam", "IMAP"),
 assert.strictEqual(model.actionUnavailable("trash", "HEY"), "")
 
 deepEqual(model.unavailableActions({ archive: true, star: true, spam: true }), [])
-deepEqual(model.unavailableActions({ archive: false, star: false }), ["archive", "star"])
-deepEqual(model.unavailableActions(null), ["archive", "star"],
+deepEqual(model.unavailableActions({ archive: false, star: false }), ["archive", "snooze", "star"],
+  "no archive means no reminder either")
+deepEqual(model.unavailableActions(null), ["archive", "snooze", "star"],
   "an unknown provider offers nothing it cannot prove")
 
 console.log("test_model.js ok")

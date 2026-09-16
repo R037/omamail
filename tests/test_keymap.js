@@ -232,7 +232,7 @@ assert.strictEqual(keymap.hintKeyFor(byId("archive")), "e",
 
 const listHints = keymap.hintsFor("list")
 deepEqual(listHints.map(function (h) { return h.key + " " + h.label }),
-  ["j / k move", "o open", "e archive", "c compose"],
+  ["j / k move", "o open", "e archive", "h remind", "c compose"],
   "the status bar offers what the list can do, in its short form")
 const composeHints = keymap.hintsFor("compose")
 deepEqual(composeHints.map(function (h) { return h.label }),
@@ -305,6 +305,9 @@ assert.ok(offered.length > withoutBoth.length, "two hints go")
 assert.ok(offered.some(h => h.label === "archive"))
 assert.ok(!withoutBoth.some(h => h.label === "archive"))
 assert.ok(!withoutBoth.some(h => h.label === "star"))
+assert.ok(offered.some(h => h.label === "remind"), "a reminder is offered where archive is")
+assert.ok(!keymap.hintsFor("list", ["archive", "snooze"]).some(h => h.label === "remind"),
+  "and withheld where it is not")
 deepEqual(keymap.hintsFor("list", []), offered, "nothing missing changes nothing")
 deepEqual(keymap.hintsFor("list", null), offered)
 

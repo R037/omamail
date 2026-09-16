@@ -296,7 +296,8 @@ function actionUnavailable(action, provider) {
 function unavailableActions(capabilities) {
   var caps = capabilities || {}
   var out = []
-  if (caps.archive !== true) out.push("archive")
+  // A reminder is an archive with a date, so it goes with it.
+  if (caps.archive !== true) { out.push("archive"); out.push("snooze") }
   if (caps.star !== true) out.push("star")
   return out
 }

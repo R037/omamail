@@ -54,7 +54,8 @@ var BINDINGS = [
   // Superhuman's key for the same thing. `h` is free in the mail contexts —
   // the calendar's "previous period" lives in its own context.
   { id: "snooze", keys: ["h"], contexts: MAIL,
-    group: "Acting", label: "Remind me later" },
+    group: "Acting", label: "Remind me later",
+    hint: { list: "remind", reader: "remind" } },
   { id: "markRead", keys: ["Shift+I"], contexts: MAIL,
     group: "Acting", label: "Mark read" },
   { id: "markUnread", keys: ["Shift+U"], contexts: MAIL,
