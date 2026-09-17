@@ -23,7 +23,7 @@ Item {
   property real anchorY: 0
   property int cursorIndex: -1
   readonly property var menuRows: [replyRow, replyAllRow, forwardRow, archiveRow,
-    snoozeRow, trashRow, spamRow, readRow, starRow, browserRow]
+    snoozeRow, labelRow, trashRow, spamRow, readRow, starRow, browserRow]
   readonly property bool opened: menu.opened
   readonly property var summary: {
     if (!service || messageId === "") return null
@@ -37,6 +37,7 @@ Item {
   signal composeRequested(string mode, string id)
   signal actionRequested(string action, string id)
   signal snoozeRequested(string id)
+  signal labelRequested(string id)
 
   anchors.fill: parent
   z: 50
@@ -148,6 +149,16 @@ Item {
           var id = root.messageId
           menu.close()
           root.snoozeRequested(id)
+        }
+      }
+      MenuRow {
+        id: labelRow
+        visible: !root.service || root.service.canLabel
+        text: "Labels..."
+        onActivated: {
+          var id = root.messageId
+          menu.close()
+          root.labelRequested(id)
         }
       }
       MenuRow { id: trashRow; text: "Move to trash"; tone: root.urgentColor; onActivated: root.run("trash") }

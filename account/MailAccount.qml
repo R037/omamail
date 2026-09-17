@@ -196,6 +196,7 @@ Item {
   readonly property bool canArchive: Provider.can(providerId, "archive")
   readonly property bool canReportSpam: Provider.can(providerId, "spam")
   readonly property bool canStar: Provider.can(providerId, "star")
+  readonly property bool canLabel: Provider.can(providerId, "label")
   readonly property bool hasLabels: Provider.can(providerId, "labels")
   readonly property bool canOpenOnWeb: Provider.can(providerId, "web")
   // A different question from the one above: whether *this mailbox*, as it is
@@ -609,6 +610,26 @@ Item {
       if (error) return
       root.labels = result
       cacheStore.putLabels(result)
+    })
+  }
+
+  // A new label, listed as soon as the server has it so the picker's next
+  // open shows it — the reload that would otherwise bring it is minutes away.
+  function createLabel(name, callback) {
+    var wanted = String(name || "").trim()
+    if (!ready || wanted === "" || !canLabel) {
+      if (typeof callback === "function") callback(null, canLabel ? "" : Model.actionUnavailable("addLabel", Provider.badge(providerId)))
+      return
+    }
+    api.createLabel(wanted, function(label, error) {
+      if (error || !label) {
+        root.fail(error || "The label could not be made")
+        if (typeof callback === "function") callback(null, error)
+        return
+      }
+      root.labels = root.labels.concat([label])
+      cacheStore.putLabels(root.labels)
+      if (typeof callback === "function") callback(label, "")
     })
   }
 
@@ -1166,7 +1187,7 @@ Item {
     var previewIndex = Model.indexById(previewMessages, messageId)
     if (index < 0 && previewIndex < 0) return
     var before = index >= 0 ? messages[index] : previewMessages[previewIndex]
-    var updated = Model.applyLabelChange(before, action)
+    var updated = Model.applyLabelChange(before, action, detail)
     var survives = Model.survivesAction(mailboxKey, action)
 
     if (action === "markRead" && before.unread) inboxUnread = Math.max(0, inboxUnread - 1)
@@ -1240,7 +1261,7 @@ Item {
     if (action === "trash") api.trashMessage(messageId, done)
     else if (action === "untrash") api.untrashMessage(messageId, done)
     else {
-      var change = Model.labelChangesFor(action)
+      var change = Model.labelChangesFor(action, detail)
       if (!change) {
         pendingAction = ""
         return
@@ -1267,6 +1288,8 @@ Item {
   }
 
   function actionLabel(action, detail) {
+    if (action === "addLabel") return "Labelled " + Model.labelNameOf(labels, detail)
+    if (action === "removeLabel") return "Label " + Model.labelNameOf(labels, detail) + " removed"
     if (action === "snooze") return "Reminder set for " + Snooze.formatWhen(detail, new Date())
     if (action === "unsnooze") return "Reminder removed"
     if (action === "archive") return "Archived"

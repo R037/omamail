@@ -407,6 +407,15 @@ Item {
     snoozePicker.openFor(id, summary ? summary.subject : "", existing ? existing.at : 0)
   }
 
+  function openLabelPicker(id) {
+    if (!service || String(id || "") === "") return
+    if (!service.canLabel) {
+      service.note(Model.actionUnavailable("addLabel", service.providerId))
+      return
+    }
+    labelPicker.openFor(id)
+  }
+
   function goMailbox(key) {
     if (!service) return
     service.selectMailbox(key)
@@ -452,6 +461,7 @@ Item {
       return
     }
     if (id === "snooze") return openSnoozePicker(cursorId)
+    if (id === "label") return openLabelPicker(cursorId)
     if (id === "markRead") return actOnCursor("markRead")
     if (id === "markUnread") {
       // Held as well as marked: the reader is still showing this message,
@@ -1563,6 +1573,35 @@ Item {
         }
       }
 
+      LabelPicker {
+        id: labelPicker
+        anchors.fill: parent
+        service: root.service
+        textColor: root.foreground
+        accentColor: root.accent
+        dimColor: root.dim
+        popupBackgroundColor: root.popupBackground
+        popupBorderColor: root.popupBorder
+        panelFontFamily: root.fontFamily
+        // Straight to the service rather than through actOnCursor: a label
+        // never takes the row out of the list it is in, and the sheet stays
+        // up for the next one.
+        onToggled: function(id, labelId, on) {
+          if (root.service) root.service.act(id, on ? "addLabel" : "removeLabel", false, labelId)
+        }
+        onCreateRequested: function(id, name) {
+          if (!root.service) return
+          root.service.createLabel(name, function(label, error) {
+            if (!label) {
+              labelPicker.createFailed()
+              return
+            }
+            labelPicker.created()
+            root.service.act(id, "addLabel", false, label.id)
+          })
+        }
+      }
+
       AccountRemovalDialog {
         id: accountRemovalDialog
         anchors.fill: parent
@@ -1606,6 +1645,7 @@ Item {
           root.actOnCursor(action)
         }
         onSnoozeRequested: function(id) { root.openSnoozePicker(id) }
+        onLabelRequested: function(id) { root.openLabelPicker(id) }
       }
 
       ShortcutHelp {

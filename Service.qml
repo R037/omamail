@@ -662,6 +662,7 @@ Item {
   readonly property bool canArchive: !current || current.canArchive
   readonly property bool canReportSpam: !current || current.canReportSpam
   readonly property bool canStar: !current || current.canStar
+  readonly property bool canLabel: !!current && current.canLabel
   readonly property bool hasLabels: !current || current.hasLabels
   readonly property bool canOpenOnWeb: !current || current.canOpenOnWeb
   readonly property bool canOpenWebInbox: !!current && current.canOpenWebInbox
@@ -734,6 +735,10 @@ Item {
   function selectLabel(name) { if (current) current.selectLabel(name) }
   function act(id, action, quiet, detail) { if (current) current.act(id, action, quiet, detail) }
   function toggleStar(id) { if (current) current.toggleStar(id) }
+  function createLabel(name, callback) {
+    if (current) current.createLabel(name, callback)
+    else if (typeof callback === "function") callback(null, "No mailbox")
+  }
   function markAllRead() { if (current) current.markAllRead() }
   function send(fields) { return current ? current.send(fields) : false }
   function fail(text) { if (current) current.fail(text) }

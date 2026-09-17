@@ -372,10 +372,10 @@ assert.strictEqual(model.actionUnavailable("spam", "IMAP"),
   "IMAP has no junk verb to report to")
 assert.strictEqual(model.actionUnavailable("trash", "HEY"), "")
 
-deepEqual(model.unavailableActions({ archive: true, star: true, spam: true }), [])
-deepEqual(model.unavailableActions({ archive: false, star: false }), ["archive", "snooze", "star"],
+deepEqual(model.unavailableActions({ archive: true, star: true, spam: true, label: true }), [])
+deepEqual(model.unavailableActions({ archive: false, star: false, label: true }), ["archive", "snooze", "star"],
   "no archive means no reminder either")
-deepEqual(model.unavailableActions(null), ["archive", "snooze", "star"],
+deepEqual(model.unavailableActions(null), ["archive", "snooze", "star", "label"],
   "an unknown provider offers nothing it cannot prove")
 
 console.log("test_model.js ok")
@@ -565,3 +565,47 @@ assert.strictEqual(model.displaySubject(rewoken[0]), "Reminder: C")
 assert.strictEqual(model.displaySubject(model.detailSummary(rewoken[0], { id: "c", subject: "C" })), "Reminder: C")
 
 console.log("test_model.js reminders ok")
+
+// ----------------------------------------------------------------- labels
+
+deepEqual(model.labelChangesFor("addLabel", "Label_7"), { add: ["Label_7"], remove: [] })
+deepEqual(model.labelChangesFor("removeLabel", "Label_7"), { add: [], remove: ["Label_7"] })
+assert.strictEqual(model.labelChangesFor("addLabel"), null, "no label named is no change")
+assert.strictEqual(model.actionCapability("addLabel"), "label")
+assert.strictEqual(model.actionCapability("removeLabel"), "label")
+assert.ok(model.actionUnavailable("addLabel", "hey").indexOf("labels") > 0)
+deepEqual(model.applyLabelChange({ id: "m", labelIds: ["INBOX"] }, "addLabel", "Label_7").labelIds,
+  ["INBOX", "Label_7"])
+deepEqual(model.applyLabelChange({ id: "m", labelIds: ["INBOX", "Label_7"] }, "removeLabel", "Label_7").labelIds,
+  ["INBOX"])
+
+const userLabels = [
+  { id: "Label_1", name: "Work", rawName: "Work", system: false },
+  { id: "Label_2", name: "Receipts", rawName: "Receipts", system: false },
+  { id: "Label_3", name: "Work/Trips", rawName: "Work/Trips", system: false },
+  { id: "INBOX", name: "Inbox", rawName: "INBOX", system: true }
+]
+deepEqual(model.labelChoices(userLabels, ["Label_2"], ""), [
+  { kind: "label", id: "Label_2", name: "Receipts", on: true },
+  { kind: "label", id: "Label_1", name: "Work", on: false },
+  { kind: "label", id: "Label_3", name: "Work/Trips", on: false }
+], "what the message has first, then the rest by name, system labels never")
+deepEqual(model.labelChoices(userLabels, [], "work").map(c => c.kind + ":" + c.name),
+  ["label:Work", "label:Work/Trips"], "a name that exists is matched, not offered for creation")
+deepEqual(model.labelChoices(userLabels, [], "WORK").map(c => c.kind + ":" + c.name),
+  ["label:Work", "label:Work/Trips"], "case does not matter")
+deepEqual(model.labelChoices(userLabels, [], "tri").map(c => c.kind + ":" + c.name),
+  ["create:tri", "label:Work/Trips"], "a partial match still offers to create the typed name")
+deepEqual(model.labelChoices(userLabels, [], "Personal").map(c => c.kind + ":" + c.name),
+  ["create:Personal"], "a name nobody has is offered for creation")
+deepEqual(model.labelChoices(userLabels, [], "  "), model.labelChoices(userLabels, [], ""),
+  "blank is nothing typed")
+deepEqual(model.labelChoices(null, null, null), [])
+const many = []
+for (let n = 0; n < 30; n++) many.push({ id: "L" + n, name: "Label " + n, rawName: "Label " + n, system: false })
+assert.strictEqual(model.labelChoices(many, [], "").length, 12, "a sheet, not a page")
+assert.strictEqual(model.labelChoices(many, [], "zzz").length, 1, "the offer to create still fits")
+assert.strictEqual(model.labelNameOf(userLabels, "Label_3"), "Work/Trips")
+assert.strictEqual(model.labelNameOf(userLabels, "Label_9"), "Label_9", "an unknown id is its own name")
+
+console.log("test_model.js labels ok")

@@ -29,6 +29,7 @@ var MARK = "gmail.png"
 
 var CAPABILITIES = {
   labels: true,
+  label: true,
   threads: true,
   archive: true,
   spam: true,

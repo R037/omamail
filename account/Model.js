@@ -158,7 +158,11 @@ function survivesAction(mailboxKey, action) {
   return true
 }
 
-function labelChangesFor(action) {
+// `detail` is the one thing an action can carry beyond its name: for the two
+// label verbs, which label.
+function labelChangesFor(action, detail) {
+  if (action === "addLabel") return detail ? { add: [String(detail)], remove: [] } : null
+  if (action === "removeLabel") return detail ? { add: [], remove: [String(detail)] } : null
   if (action === "markRead") return { add: [], remove: ["UNREAD"] }
   if (action === "markUnread") return { add: ["UNREAD"], remove: [] }
   if (action === "star") return { add: ["STARRED"], remove: [] }
@@ -186,6 +190,7 @@ function actionCapability(action) {
   var verb = String(action || "")
   if (verb === "archive" || verb === "unarchive") return "archive"
   if (verb === "snooze" || verb === "unsnooze" || verb === "wake") return "archive"
+  if (verb === "addLabel" || verb === "removeLabel") return "label"
   if (verb === "star" || verb === "unstar") return "star"
   if (verb === "spam") return "spam"
   return ""
@@ -287,6 +292,7 @@ function actionUnavailable(action, provider) {
   if (needs === "archive") return name + " has no archive"
   if (needs === "star") return name + " has no star"
   if (needs === "spam") return name + " has no junk verb to report to"
+  if (needs === "label") return name + " has no labels to put on a message"
   return ""
 }
 
@@ -299,12 +305,13 @@ function unavailableActions(capabilities) {
   // A reminder is an archive with a date, so it goes with it.
   if (caps.archive !== true) { out.push("archive"); out.push("snooze") }
   if (caps.star !== true) out.push("star")
+  if (caps.label !== true) out.push("label")
   return out
 }
 
-function applyLabelChange(summary, action) {
+function applyLabelChange(summary, action, detail) {
   if (!summary) return summary
-  var change = labelChangesFor(action)
+  var change = labelChangesFor(action, detail)
   if (!change) return summary
   var next = {}
   for (var key in summary) next[key] = summary[key]
@@ -705,4 +712,50 @@ function truncate(text, limit) {
   var value = String(text || "")
   var max = Math.max(4, Math.floor(Number(limit) || 80))
   return value.length <= max ? value : value.substring(0, max - 1) + "…"
+}
+
+// ------------------------------------------------------------------ labels
+
+// What the picker lists: the user's own labels, filtered by what has been
+// typed, each saying whether the message already carries it. When the text
+// names no label exactly, the first row offers to make one — so typing a name
+// that exists selects it, and typing one that does not creates it.
+function labelChoices(labels, labelIds, typed) {
+  var all = Array.isArray(labels) ? labels : []
+  var on = {}
+  var ids = Array.isArray(labelIds) ? labelIds : []
+  for (var i = 0; i < ids.length; i++) on[String(ids[i])] = true
+  var text = String(typed === undefined || typed === null ? "" : typed).trim()
+  var needle = text.toLowerCase()
+  var out = []
+  var exact = false
+  for (var j = 0; j < all.length; j++) {
+    var label = all[j]
+    if (!label || label.system) continue
+    var name = String(label.rawName || label.name || "")
+    if (needle !== "" && name.toLowerCase().indexOf(needle) < 0) continue
+    if (name.toLowerCase() === needle) exact = true
+    out.push({ kind: "label", id: String(label.id), name: name, on: on[String(label.id)] === true })
+  }
+  out.sort(function(a, b) {
+    // What the message already has comes first, then the rest by name.
+    if (a.on !== b.on) return a.on ? -1 : 1
+    return a.name.toLowerCase() < b.name.toLowerCase() ? -1 : (a.name.toLowerCase() > b.name.toLowerCase() ? 1 : 0)
+  })
+  // A sheet, not a page: past this many the answer is to type more of the
+  // name, and the rows that fit are the ones the message has plus the first
+  // of the rest.
+  if (out.length > MAX_LABEL_CHOICES) out.length = MAX_LABEL_CHOICES
+  if (text !== "" && !exact) out.unshift({ kind: "create", id: "", name: text, on: false })
+  return out
+}
+
+var MAX_LABEL_CHOICES = 12
+
+function labelNameOf(labels, id) {
+  var all = Array.isArray(labels) ? labels : []
+  for (var i = 0; i < all.length; i++) {
+    if (all[i] && String(all[i].id) === String(id)) return String(all[i].rawName || all[i].name || id)
+  }
+  return String(id === undefined || id === null ? "" : id)
 }

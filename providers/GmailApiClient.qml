@@ -230,6 +230,20 @@ Item {
       })
   }
 
+  // Shown in the label list and in the message list, which is what somebody
+  // making a label from the picker expects of it.
+  function createLabel(name, callback) {
+    return request("POST", Api.labelsPath(), null, {
+      name: String(name || ""),
+      labelListVisibility: "labelShow",
+      messageListVisibility: "show"
+    }, function(status, payload, error) {
+      if (typeof callback !== "function") return
+      var label = error ? null : Api.parseLabel(payload)
+      callback(label, error || (label ? "" : "Gmail did not return the new label"))
+    })
+  }
+
   function getLabelCounts(labelId, callback) {
     return request("GET", Api.labelPath(labelId), null, null,
       function(status, payload, error) {

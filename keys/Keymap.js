@@ -54,6 +54,10 @@ var BINDINGS = [
   { id: "snooze", keys: ["h"], contexts: MAIL,
     group: "Acting", label: "Remind me later",
     hint: { list: "remind", reader: "remind" } },
+  // `l` is the calendar's "next period" only in its own context.
+  { id: "label", keys: ["l"], contexts: MAIL,
+    group: "Acting", label: "Add or remove a label",
+    hint: { list: "label", reader: "label" } },
   { id: "markRead", keys: ["Shift+I"], contexts: MAIL,
     group: "Acting", label: "Mark read" },
   // `u` used to be "back to the list", which Escape also is. A message that

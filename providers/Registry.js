@@ -34,6 +34,10 @@ function capabilities(values) {
   return {
     // Several labels on one message, rather than one folder holding it.
     labels: raw.labels === true,
+    // A label of the user's own can be put on a message, taken off it, and
+    // made new. Not the same as `labels`: HEY lists its boxes as labels but
+    // maps a change to one of them onto a fixed set of verbs.
+    label: raw.label === true,
     // A server-side conversation id.
     threads: raw.threads === true,
     // "Archive" means something.

@@ -205,6 +205,12 @@ function parseLabels(payload) {
   return result
 }
 
+// One label, as the create call answers with it.
+function parseLabel(payload) {
+  var list = parseLabels({ labels: [payload] })
+  return list.length > 0 ? list[0] : null
+}
+
 function parseLabelCounts(payload) {
   var body = payload && typeof payload === "object" ? payload : {}
   return {

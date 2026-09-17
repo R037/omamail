@@ -38,6 +38,7 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	components/AppMenu.qml \
 	components/AccountSwitcher.qml \
 	components/SnoozePicker.qml \
+	components/LabelPicker.qml \
 	components/AccountRemovalDialog.qml \
 	components/BackBar.qml \
 	components/UserBar.qml \
