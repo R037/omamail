@@ -433,6 +433,10 @@ function detailSummary(previous, summary) {
     merged.time = previous.time
     merged.fullTime = previous.fullTime
   }
+  // Whether this is a woken reminder is something the list knows and the
+  // message itself does not: a live read must not take the prefix off the
+  // row it just refreshed.
+  if (previous.reminder === true) merged.reminder = true
   return merged
 }
 

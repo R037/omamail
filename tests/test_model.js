@@ -548,4 +548,20 @@ assert.strictEqual(model.displaySubject({ subject: "Lunch" }), "Lunch")
 assert.strictEqual(model.displaySubject({ subject: "Reminder: Lunch", reminder: true }), "Reminder: Lunch")
 assert.strictEqual(model.displaySubject(null), "")
 
+// A live read of a woken reminder keeps it one: the flag is the list's, not
+// the message's, and the fresh summary does not carry it.
+deepEqual(model.detailSummary({ id: "c", subject: "C", reminder: true }, { id: "c", subject: "C", snippet: "x" }),
+  { id: "c", subject: "C", snippet: "x", reminder: true }, "a live read keeps the reminder flag")
+deepEqual(model.detailSummary({ id: "c", subject: "C" }, { id: "c", subject: "C" }),
+  { id: "c", subject: "C" }, "and invents none")
+
+// Set again after waking, then woken again: one prefix, through every step.
+const again = model.surfaceReminders(
+  model.surfaceReminders([{ id: "c", subject: "C" }], [{ id: "c", at: 1 }], {}, "inbox"),
+  [], {}, "inbox")
+assert.strictEqual(again[0].reminder, false, "setting it again takes the prefix off")
+const rewoken = model.surfaceReminders(again, [{ id: "c", at: 2 }], {}, "inbox")
+assert.strictEqual(model.displaySubject(rewoken[0]), "Reminder: C")
+assert.strictEqual(model.displaySubject(model.detailSummary(rewoken[0], { id: "c", subject: "C" })), "Reminder: C")
+
 console.log("test_model.js reminders ok")
