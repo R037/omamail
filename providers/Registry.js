@@ -61,8 +61,17 @@ function capabilities(values) {
     search: raw.search === true,
     // Sends mail. A read-only provider still shows a reader; it just cannot
     // answer from it.
-    send: raw.send === true
+    send: raw.send === true,
+    // How many of the cursor's neighbours are worth fetching before they are
+    // asked for. A number rather than a flag, because the cost differs: a
+    // Gmail read is one request on a warm connection, an IMAP read is a
+    // process, a TLS handshake and a LOGIN.
+    prefetchDepth: Math.max(0, Math.floor(Number(raw.prefetchDepth) || 0))
   }
+}
+
+function prefetchDepth(id) {
+  return get(id).capabilities.prefetchDepth
 }
 
 // The shape the sidebar and the tab row already know how to draw: a key, a

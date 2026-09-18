@@ -66,7 +66,9 @@ var CAPABILITIES = {
   // where the user is standing whenever it would be worth pressing.
   webBox: false,
   search: true,
-  send: true
+  send: true,
+  // One process per read: the next message only.
+  prefetchDepth: 1
 }
 
 // HEY's own boxes, in the order HEY puts them in. The query strings are read by

@@ -609,3 +609,31 @@ assert.strictEqual(model.labelNameOf(userLabels, "Label_3"), "Work/Trips")
 assert.strictEqual(model.labelNameOf(userLabels, "Label_9"), "Label_9", "an unknown id is its own name")
 
 console.log("test_model.js labels ok")
+
+// --------------------------------------------------------------- prefetch
+
+const rows = [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }, { id: "e" }]
+deepEqual(model.prefetchNeighbours(rows, "b", "b", 3), ["c", "d", "a"], "two below, then the one above")
+deepEqual(model.prefetchNeighbours(rows, "b", "b", 2), ["c", "d"], "depth is a cap in that order")
+deepEqual(model.prefetchNeighbours(rows, "b", "b", 1), ["c"])
+deepEqual(model.prefetchNeighbours(rows, "b", "b", 0), [], "no depth, no guessing")
+deepEqual(model.prefetchNeighbours(rows, "e", "e", 3), ["d"], "the end of the list is not a neighbour of itself")
+deepEqual(model.prefetchNeighbours(rows, "d", "d", 3), ["e", "c"], "clamping does not repeat a row")
+deepEqual(model.prefetchNeighbours(rows, "a", "a", 3), ["b", "c"], "nothing above the top")
+deepEqual(model.prefetchNeighbours(rows, "b", "c", 3), ["d", "a"], "what is on screen is not fetched again")
+deepEqual(model.prefetchNeighbours([], "b", "", 3), [])
+deepEqual(model.prefetchNeighbours(rows, "zz", "", 3), ["a", "e"],
+  "a cursor no longer in the list guesses the ends, which is where it will land")
+
+const rowNow = { id: "m", subject: "S", unread: false, starred: true, inInbox: true, labelIds: ["INBOX", "STARRED", "Label_1"], snippet: "old" }
+const fetched = { id: "m", subject: "S", unread: true, starred: false, inInbox: true, labelIds: ["INBOX", "UNREAD"], snippet: "new", date: 5 }
+const brought = model.prefetchedSummary(rowNow, fetched)
+assert.strictEqual(brought.unread, false, "the row's read state wins over the older fetch")
+assert.strictEqual(brought.starred, true, "so does its star")
+deepEqual(brought.labelIds, ["INBOX", "STARRED", "Label_1"], "and its labels")
+assert.strictEqual(brought.snippet, "new", "everything else is the fetch's")
+assert.strictEqual(brought.date, 5)
+deepEqual(model.prefetchedSummary(null, fetched), fetched, "no row, nothing to overlay")
+assert.strictEqual(model.prefetchedSummary(rowNow, null), rowNow)
+
+console.log("test_model.js prefetch ok")

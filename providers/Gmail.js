@@ -38,7 +38,8 @@ var CAPABILITIES = {
   web: true,
   webBox: true,
   search: true,
-  send: true
+  send: true,
+  prefetchDepth: 3
 }
 
 // Search queries rather than label ids: `is:unread` and `in:anywhere` have no

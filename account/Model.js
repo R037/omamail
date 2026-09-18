@@ -534,6 +534,46 @@ function cursorAfterOffset(list, cursorId, delta) {
   return source[next].id
 }
 
+// The rows worth having ready before the cursor reaches them: the next two,
+// then the one above — people scan down, and step back one on overshooting.
+// `cursorAfterOffset` clamps at either end, so the same row can answer for
+// two offsets and the cursor's own row for one; neither is a neighbour.
+function prefetchNeighbours(list, cursorId, selectedId, depth) {
+  var want = Math.max(0, Math.floor(Number(depth) || 0))
+  if (want === 0) return []
+  var skip = {}
+  skip[String(cursorId || "")] = true
+  skip[String(selectedId || "")] = true
+  skip[""] = true
+  var out = []
+  var offsets = [1, 2, -1]
+  for (var i = 0; i < offsets.length && out.length < want; i++) {
+    var id = cursorAfterOffset(list, cursorId, offsets[i])
+    if (skip[id] === true) continue
+    skip[id] = true
+    out.push(id)
+  }
+  return out
+}
+
+// A summary fetched ahead of time, brought up to date with the row it is
+// about to replace. The body does not change between the fetch and the
+// reading, but the flags can: a star put on, a message marked read, a label
+// added since the fetch would all be undone by a summary that predates them.
+// The row is what the user has been looking at, so the row is right.
+//
+// `time` is the relative time as of the fetch, and the caller — which has the
+// clock — rewrites it.
+function prefetchedSummary(row, summary) {
+  var merged = detailSummary(row, summary)
+  if (!merged || !row) return merged
+  merged.unread = row.unread === true
+  merged.starred = row.starred === true
+  merged.inInbox = row.inInbox === true
+  merged.labelIds = Array.isArray(row.labelIds) ? row.labelIds.slice() : []
+  return merged
+}
+
 // Where the cursor goes when the row it is on is about to leave the list.
 // Called with the list as it still is, so the departing row still has
 // neighbours: the one below takes its place, or the one above at the end.

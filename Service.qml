@@ -721,6 +721,7 @@ Item {
   function refresh() { if (current) current.refresh() }
   function loadMore() { if (current) current.loadMore() }
   function select(id, markRead) { if (current) current.select(id, markRead) }
+  function prefetchAround(id) { if (current) current.prefetchAround(id) }
   function clearSelection() { if (current) current.clearSelection() }
   // The notice's own button, which is the switch: what it turns on is every
   // message, and it says so.

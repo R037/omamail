@@ -197,6 +197,7 @@ Item {
   readonly property bool canReportSpam: Provider.can(providerId, "spam")
   readonly property bool canStar: Provider.can(providerId, "star")
   readonly property bool canLabel: Provider.can(providerId, "label")
+  readonly property int prefetchDepth: Provider.prefetchDepth(providerId)
   readonly property bool hasLabels: Provider.can(providerId, "labels")
   readonly property bool canOpenOnWeb: Provider.can(providerId, "web")
   // A different question from the one above: whether *this mailbox*, as it is
@@ -854,7 +855,11 @@ Item {
     selectedInvite = null
     selectedUnsubscribe = null
     unsubscribeDone = ""
-    detailLoading = true
+    // A read made ahead of time answers before the loading state could be
+    // drawn, so it is never entered: `busy` would flip on and off in one call.
+    var ahead = prefetched[messageId]
+    if (ahead && Date.now() - ahead.at >= prefetchTtlMs) ahead = null
+    detailLoading = !ahead
     detailPainted = false
 
     // The reader opens on what the list already knows — sender, subject, date,
@@ -867,6 +872,14 @@ Item {
     // on there being no summary and only the live payload ever set one.
     var knownSummary = Model.messageById(messages, previewMessages, messageId)
     if (knownSummary) selectedMessage = knownSummary
+
+    // Already read, decoded and parsed while the cursor was on a neighbour:
+    // painted now, from memory, with no file and no network in the way.
+    if (ahead) {
+      detailLive = true
+      applyLivePayload(messageId, serial, null, willMarkRead, ahead)
+      return
+    }
 
     // A message that has been opened before opens from its file, usually well
     // before Gmail answers. The read is asynchronous, so the live copy can win
@@ -906,101 +919,285 @@ Item {
       bodyCache.touch(messageId)
     })
 
+    // On the wire already, as a guess that turned out right: wait for that
+    // read rather than sending the same one again beside it.
+    if (prefetchInflightId === messageId) {
+      prefetchAdopt = ({ id: messageId, serial: serial, willMarkRead: willMarkRead })
+      detailHandle = null
+      return
+    }
+
     detailHandle = api.getMessage(messageId, true, function(payload, error) {
       if (serial !== root.detailSerial) return
-      root.detailLoading = false
-      root.detailLive = true
-      root.detailPainted = true
       if (error || !payload) {
+        root.detailLoading = false
+        root.detailLive = true
+        root.detailPainted = true
         root.fail(error || "Could not open that message")
         return
       }
-      // Merged with the row rather than replacing it: a provider whose detail
-      // read carries no subject line of its own — HEY reads a conversation, not
-      // a message — would otherwise blank the one the list had drawn.
-      var previous = Model.messageById(root.messages, root.previewMessages, messageId)
-      var summary = Model.detailSummary(previous,
-        Mail.summarize(payload, new Date()))
-      root.selectedMessage = summary
-      // One walk of the MIME tree for both: a message with no text/plain
-      // part of its own has its text/html part decoded once here rather than
-      // once for each of `extractBody` and `extractHtml` asking for it
-      // separately, and that is exactly the shape most of what falls back to
-      // html in the first place.
-      var parts = Mail.extractParts(payload.payload)
-      var decoded = parts.body
-      var rawHtml = parts.html
-      // Every reading of the body out of one parse. The markers in the
-      // plain-text one and the pictures they stand for are numbered by the same
-      // walk over the same tree, so a marker cannot open somebody else's image
-      // — and it is only asked for when the text came from the HTML, because a
-      // message that shipped its own text/plain part never had images in it.
-      // A body never changes once fetched, which is what makes the cache
-      // correct — so when the cache already painted this exact markup there is
-      // nothing here to paint again, and rendering it would be a second parse
-      // of the whole message to arrive at the document already on screen.
-      if (rawHtml !== root.sourceHtml || root.selectedDocument === null) {
-        var ready = root.renderSource(rawHtml, decoded.source === "html")
-        if (ready.plainText) decoded = ({ text: ready.plainText.text, source: "html" })
-        root.selectedBody = decoded
-        root.selectedImages = ready.plainText ? ready.plainText.images : []
-      }
-      // A body never changes once fetched, so a live read that agrees with
-      // what the cache already painted is that record confirmed, not a new
-      // one to build: recomputing the attachments, the invite and the
-      // unsubscribe offer from the payload would repeat exactly the answer
-      // already on screen.
-      var cacheHit = root.cachedRecord !== null && rawHtml === root.cachedRecord.html
-      if (cacheHit) {
-        root.selectedAttachments = root.cachedRecord.attachments
-        // selectedInvite and selectedUnsubscribe are already the cache
-        // callback's own answer, and this read has nothing new to say about
-        // either, so both stay exactly as painted.
-      } else {
-        root.selectedAttachments = Mail.attachments(payload.payload)
-        root.selectedInvite = Calendar.fromPayload(payload.payload)
-        root.selectedUnsubscribe = Unsub.fromMessage(payload)
-      }
-      // What the reader is showing, which is not `decoded` when the cache had
-      // already painted this markup: that text came from `Mail.extractBody`'s
-      // own flattening, and its images are numbered by a different walk than
-      // the list beside it here.
-      var record = ({
-        text: root.selectedBody.text,
-        source: root.selectedBody.source,
-        html: rawHtml,
-        attachments: root.selectedAttachments,
-        images: root.selectedImages,
-        invite: root.selectedInvite,
-        unsubscribe: root.selectedUnsubscribe
-      })
-      // A confirmed repeat writes nothing: the file on disk already holds
-      // this exact record, and body-cache.sh's rewrite — a queued write and
-      // the subprocess that runs it — would cost real time to produce bytes
-      // already there.
-      if (!cacheHit) bodyCache.put(messageId, record)
-      // Gmail describes the calendar part rather than sending it whenever the
-      // organiser's calendar named the file, which Google's own does — so the
-      // meeting is one request away, and the card lands a moment after the
-      // message it belongs to. The cache is written again with it, so it is
-      // there at once the next time this message is opened.
-      //
-      // Not asked again for a confirmed repeat that already resolved one:
-      // Gmail promises this same part, by reference, on every read of a
-      // message that carries it — without the `cacheHit` half of this check,
-      // reopening a message whose invitation was already on screen re-fetched
-      // its ICS file, and briefly cleared the card, every single time.
-      if (!(cacheHit && root.selectedInvite))
-        root.loadInvite(messageId, serial, Calendar.pendingPart(payload.payload), record)
+      root.applyLivePayload(messageId, serial, payload, willMarkRead, null)
+    })
+  }
+
+  // The message as the provider describes it, painted. One function for the
+  // two ways a payload arrives: from the read `select` just asked for, and —
+  // with `entry` — from a read made ahead of time for a neighbour of the
+  // cursor, already decoded, in which case `payload` is null and every value
+  // comes off the entry.
+  function applyLivePayload(messageId, serial, payload, willMarkRead, entry) {
+    if (serial !== root.detailSerial) return
+    root.detailLoading = false
+    root.detailLive = true
+    root.detailPainted = true
+    // Merged with the row rather than replacing it: a provider whose detail
+    // read carries no subject line of its own — HEY reads a conversation, not
+    // a message — would otherwise blank the one the list had drawn. A read
+    // made ahead of time is older than the row as well, so the row's flags
+    // stand: a star put on since must not come off because a fetch predates it.
+    var now = new Date()
+    var previous = Model.messageById(root.messages, root.previewMessages, messageId)
+    var summary = entry
+      ? Model.prefetchedSummary(previous, entry.summary)
+      : Model.detailSummary(previous, Mail.summarize(payload, now))
+    if (entry && summary && summary.date) summary.time = Mail.relativeTime(summary.date, now)
+    root.selectedMessage = summary
+    // One walk of the MIME tree for both: a message with no text/plain
+    // part of its own has its text/html part decoded once here rather than
+    // once for each of `extractBody` and `extractHtml` asking for it
+    // separately, and that is exactly the shape most of what falls back to
+    // html in the first place.
+    var parts = entry ? ({ body: entry.body, html: entry.html }) : Mail.extractParts(payload.payload)
+    var decoded = parts.body
+    var rawHtml = parts.html
+    // Every reading of the body out of one parse. The markers in the
+    // plain-text one and the pictures they stand for are numbered by the same
+    // walk over the same tree, so a marker cannot open somebody else's image
+    // — and it is only asked for when the text came from the HTML, because a
+    // message that shipped its own text/plain part never had images in it.
+    // A body never changes once fetched, which is what makes the cache
+    // correct — so when the cache already painted this exact markup there is
+    // nothing here to paint again, and rendering it would be a second parse
+    // of the whole message to arrive at the document already on screen.
+    if (rawHtml !== root.sourceHtml || root.selectedDocument === null) {
+      var ready = root.renderSource(rawHtml, decoded.source === "html")
+      if (ready.plainText) decoded = ({ text: ready.plainText.text, source: "html" })
+      root.selectedBody = decoded
+      root.selectedImages = ready.plainText ? ready.plainText.images : []
+    }
+    // A body never changes once fetched, so a live read that agrees with
+    // what the cache already painted is that record confirmed, not a new
+    // one to build: recomputing the attachments, the invite and the
+    // unsubscribe offer from the payload would repeat exactly the answer
+    // already on screen. A read made ahead of time did that work when it
+    // arrived, and hands it over.
+    var cacheHit = root.cachedRecord !== null && rawHtml === root.cachedRecord.html
+    if (cacheHit) {
+      root.selectedAttachments = root.cachedRecord.attachments
+      // selectedInvite and selectedUnsubscribe are already the cache
+      // callback's own answer, and this read has nothing new to say about
+      // either, so both stay exactly as painted.
+    } else if (entry) {
+      root.selectedAttachments = entry.record.attachments
+      root.selectedInvite = entry.record.invite
+      root.selectedUnsubscribe = entry.record.unsubscribe
+    } else {
+      root.selectedAttachments = Mail.attachments(payload.payload)
+      root.selectedInvite = Calendar.fromPayload(payload.payload)
+      root.selectedUnsubscribe = Unsub.fromMessage(payload)
+    }
+    // What the reader is showing, which is not `decoded` when the cache had
+    // already painted this markup: that text came from `Mail.extractBody`'s
+    // own flattening, and its images are numbered by a different walk than
+    // the list beside it here.
+    var record = ({
+      text: root.selectedBody.text,
+      source: root.selectedBody.source,
+      html: rawHtml,
+      attachments: root.selectedAttachments,
+      images: root.selectedImages,
+      invite: root.selectedInvite,
+      unsubscribe: root.selectedUnsubscribe
+    })
+    // A confirmed repeat writes nothing: the file on disk already holds
+    // this exact record, and body-cache.sh's rewrite — a queued write and
+    // the subprocess that runs it — would cost real time to produce bytes
+    // already there. A read made ahead of time was written when it arrived.
+    if (!cacheHit && !entry) bodyCache.put(messageId, record)
+    // Gmail describes the calendar part rather than sending it whenever the
+    // organiser's calendar named the file, which Google's own does — so the
+    // meeting is one request away, and the card lands a moment after the
+    // message it belongs to. The cache is written again with it, so it is
+    // there at once the next time this message is opened.
+    //
+    // Not asked again for a confirmed repeat that already resolved one:
+    // Gmail promises this same part, by reference, on every read of a
+    // message that carries it — without the `cacheHit` half of this check,
+    // reopening a message whose invitation was already on screen re-fetched
+    // its ICS file, and briefly cleared the card, every single time.
+    if (!(cacheHit && root.selectedInvite))
+      root.loadInvite(messageId, serial, entry ? entry.pendingPart : Calendar.pendingPart(payload.payload), record)
+    // The row is refreshed from a live read only: what a read made ahead of
+    // time knows about the row, the row already knew better.
+    if (!entry) {
       root.messages = Model.replaceById(root.messages, summary)
       root.previewMessages = Model.replaceById(root.previewMessages, summary)
-      // Opening a message is the one place Gmail's own clients mark it read
-      // without being asked, and a reader that leaves it bold is confusing.
-      // A preview render is not that: `willMarkRead` is false for a cursor
-      // move, so stepping through the list with j/k previews every body
-      // without quietly marking half a mailbox read.
-      if (willMarkRead && summary.unread) root.act(messageId, "markRead", true)
+    }
+    // Opening a message is the one place Gmail's own clients mark it read
+    // without being asked, and a reader that leaves it bold is confusing.
+    // A preview render is not that: `willMarkRead` is false for a cursor
+    // move, so stepping through the list with j/k previews every body
+    // without quietly marking half a mailbox read.
+    if (willMarkRead && summary && summary.unread) root.act(messageId, "markRead", true)
+  }
+
+  // ------------------------------------------------------------- prefetch
+  //
+  // The rows the cursor is likely to reach next — two below it, one above —
+  // read before they are asked for, so landing on one paints at once instead
+  // of after a round trip and a parse. What is kept is what `applyLivePayload`
+  // needs and nothing more: the decoded body and the derived record, never
+  // the provider's payload, which with inline pictures runs to megabytes.
+  //
+  // One read at a time. A message the user has actually landed on is fetched
+  // by `select`, and three guesses racing it for the connection would make
+  // the one that matters slower.
+  property var prefetched: ({})
+  property var prefetchOrder: []
+  property var prefetchQueue: []
+  property var prefetchHandle: null
+  property string prefetchInflightId: ""
+  // A `select` that found its message already on the wire waits for that
+  // read rather than starting a second one.
+  property var prefetchAdopt: null
+  property var warmQueue: []
+  readonly property int maxPrefetched: 8
+  readonly property int prefetchTtlMs: 10 * 60 * 1000
+
+  function prefetchAround(cursorId) {
+    if (!ready || !active || !windowOpen || prefetchDepth === 0) return
+    var wanted = Model.prefetchNeighbours(messages, cursorId, selectedId, prefetchDepth)
+    var nowMs = Date.now()
+    var queue = []
+    for (var i = 0; i < wanted.length; i++) {
+      var id = wanted[i]
+      var have = prefetched[id]
+      if (have && nowMs - have.at < prefetchTtlMs) continue
+      if (id === prefetchInflightId) continue
+      queue.push(id)
+    }
+    // The queue is what the cursor wants now, not what it wanted a moment
+    // ago: a held j leaves a trail of neighbours nobody will land on.
+    prefetchQueue = queue
+    prefetchNext()
+  }
+
+  function prefetchNext() {
+    if (prefetchInflightId !== "" || prefetchQueue.length === 0 || !ready) return
+    var id = prefetchQueue[0]
+    prefetchQueue = prefetchQueue.slice(1)
+    prefetchInflightId = id
+    prefetchHandle = api.getMessage(id, true, function(payload, error) {
+      if (root.prefetchInflightId !== id) return
+      root.prefetchInflightId = ""
+      root.prefetchHandle = null
+      var adopt = root.prefetchAdopt
+      root.prefetchAdopt = null
+      var adopted = !!adopt && adopt.id === id && adopt.serial === root.detailSerial
+      if (error || !payload) {
+        // Only a read somebody is waiting on says so. A guess that failed
+        // is tried again if the cursor ever gets there.
+        if (adopted) {
+          root.detailLoading = false
+          root.detailLive = true
+          root.detailPainted = true
+          root.fail(error || "Could not open that message")
+        }
+        root.prefetchNext()
+        return
+      }
+      if (adopted) {
+        root.applyLivePayload(id, adopt.serial, payload, adopt.willMarkRead, null)
+        root.prefetchNext()
+        return
+      }
+      root.rememberPrefetched(id, payload)
+      root.prefetchNext()
     })
+  }
+
+  // Everything `applyLivePayload` would derive from the payload, derived now
+  // and kept; the payload itself is let go.
+  function rememberPrefetched(id, payload) {
+    var parts = Mail.extractParts(payload.payload)
+    var record = ({
+      text: parts.body.text,
+      source: parts.body.source,
+      html: parts.html,
+      attachments: Mail.attachments(payload.payload),
+      images: [],
+      invite: Calendar.fromPayload(payload.payload),
+      unsubscribe: Unsub.fromMessage(payload)
+    })
+    var entry = ({
+      summary: Mail.summarize(payload, new Date()),
+      body: parts.body,
+      html: parts.html,
+      record: record,
+      pendingPart: Calendar.pendingPart(payload.payload),
+      at: Date.now()
+    })
+    var next = ({})
+    var order = []
+    for (var i = 0; i < prefetchOrder.length; i++) {
+      var key = prefetchOrder[i]
+      if (key === id) continue
+      next[key] = prefetched[key]
+      order.push(key)
+    }
+    next[id] = entry
+    order.push(id)
+    while (order.length > maxPrefetched) delete next[order.shift()]
+    prefetched = next
+    prefetchOrder = order
+    // On disk as well, so the next session opens it from its file the way
+    // any opened message does. The write queue is serial and its own thing;
+    // the read slot is never touched from here, because a second read
+    // displaces the one the selected message is waiting on.
+    bodyCache.put(id, record)
+    // The parse is the other half of the wait, and it is done here, after the
+    // read, one document per tick, so it never lands on top of a paint.
+    if (parts.html !== "" && !alwaysShowImages && parts.html.length <= Html.MAX_RICH_TEXT) {
+      warmQueue = warmQueue.concat([{ html: parts.html, withPlainText: parts.body.source === "html" }])
+      warmTimer.start()
+    }
+  }
+
+  // `renderSource`'s parse without its paint: the same key, the same sanitize
+  // for the blocked render — the only one the cache holds — and nothing
+  // written to what is on screen.
+  function warmRender(html, withPlainText) {
+    var cacheKey = RenderCache.key(html, withPlainText === true)
+    if (RenderCache.get(renderCache, cacheKey)) return
+    var ready = Html.sanitize(html, ({
+      allowRemoteImages: false,
+      remoteImageData: null,
+      withPlainText: withPlainText === true,
+      withReader: true
+    }))
+    renderCache = RenderCache.put(renderCache, cacheKey, ready)
+  }
+
+  function resetPrefetch() {
+    abortRequest(prefetchHandle)
+    prefetchHandle = null
+    prefetchInflightId = ""
+    prefetchAdopt = null
+    prefetchQueue = []
+    warmQueue = []
+    warmTimer.stop()
+    prefetched = ({})
+    prefetchOrder = []
   }
 
   // The invitation the message pointed at. Nothing happens for the messages
@@ -1820,6 +2017,7 @@ Item {
     mailboxKey = String(key || "inbox")
     searchQuery = ""
     rawQuery = ""
+    resetPrefetch()
     clearSelection()
     messages = []
     previewMessages = []
@@ -1833,6 +2031,7 @@ Item {
     searchQuery = query
     // Typing in the search box leaves whatever label was selected.
     rawQuery = ""
+    resetPrefetch()
     clearSelection()
     messages = []
     listLoaded = false
@@ -1846,6 +2045,7 @@ Item {
     if (query === "" || query === rawQuery) return
     searchQuery = ""
     rawQuery = query
+    resetPrefetch()
     clearSelection()
     messages = []
     listLoaded = false
@@ -1921,13 +2121,19 @@ Item {
     countPrimed = false
     cacheStore.clear()
     bodyCache.clear()
+    resetPrefetch()
     clearSelection()
   }
 
   // ------------------------------------------------------------- lifecycle
 
   onWindowOpenChanged: {
-    if (!windowOpen) return
+    if (!windowOpen) {
+      // Guesses about where a closed window's cursor will go next are not
+      // worth the reads.
+      resetPrefetch()
+      return
+    }
     clearNotice()
     if (!ready) return
     loadProfile()
@@ -2099,6 +2305,25 @@ Item {
     running: root.ready
     repeat: true
     onTriggered: root.syncTick++
+  }
+
+  // One parse per tick, with a frame between them: three neighbours arriving
+  // at once must not become one long stall on top of the paint the user is
+  // waiting for. A Timer rather than Qt.callLater, which coalesces and gives
+  // the paint nothing between documents.
+  Timer {
+    id: warmTimer
+    interval: 16
+    repeat: true
+    onTriggered: {
+      if (root.warmQueue.length === 0) {
+        stop()
+        return
+      }
+      var job = root.warmQueue[0]
+      root.warmQueue = root.warmQueue.slice(1)
+      root.warmRender(job.html, job.withPlainText)
+    }
   }
 
   Timer {

@@ -30,6 +30,8 @@ var CAPABILITIES = {
   batch: true,
   search: true,
   send: true,
+  // A TLS handshake and a LOGIN per read is too much to spend on a guess.
+  prefetchDepth: 0,
   // No web UI this plugin could know the address of.
   web: false
 }

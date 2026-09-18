@@ -183,6 +183,7 @@ Item {
     // Seated is not shown: the cursor may already have been on this row when
     // the window was last shut, and then nothing below fires for it.
     previewTimer.restart()
+    prefetchTimer.restart()
     Qt.callLater(function() { focusScope.applyContextFocus() })
   }
 
@@ -272,6 +273,15 @@ Item {
     onTriggered: root.previewCursor()
   }
 
+  // Once the cursor has rested: the rows it is likely to reach next are read
+  // ahead, so landing on one paints at once. Longer than the preview's wait,
+  // so a held j reads ahead of where it stops and not of every row it passed.
+  Timer {
+    id: prefetchTimer
+    interval: 250
+    onTriggered: if (root.service && root.cursorId !== "") root.service.prefetchAround(root.cursorId)
+  }
+
   // Wherever the cursor lands, the pane beside the list shows what it landed
   // on — not only after j and k. Archiving, deleting or putting a message
   // aside seats the cursor on its neighbour, and the list arriving seats it on
@@ -280,6 +290,7 @@ Item {
   // that row is already the selection, so previewCursor has nothing to do.
   onCursorIdChanged: {
     previewTimer.restart()
+    prefetchTimer.restart()
     // Leaving the message ends the hold: coming back to it is looking at it
     // again, and looking at it for a second is reading it.
     if (cursorId !== heldUnreadId) heldUnreadId = ""
@@ -583,6 +594,8 @@ Item {
     function onMessagesChanged() {
       root.cursorId = Model.cursorAfterReload(
         root.service ? root.service.messages : [], root.cursorId)
+      // The neighbours may be different rows now.
+      prefetchTimer.restart()
     }
     // A new account has no mailbox yet, so the only useful place to be is the
     // page that gives it one.
