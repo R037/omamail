@@ -64,6 +64,22 @@ Porting is days, not a rewrite. In rough order of effort:
 4. **Keybindings:** `h`, `l`, `u` (unread, not back), and the bar hints — their
    keymap table if it survived, else wherever `Shortcut`s live now.
 
+## Direction: Gmail only
+
+Decided 2026-09-18. The IMAP and HEY providers, their setup pages, the
+provider picker and the IMAP/SMTP transport script are removed (commit after
+`9c2bb03`); `providers/Registry.js` keeps its shape with one entry, so nothing
+above it had to learn that there is only one answer. Adding a mailbox goes
+straight to the Gmail page. Still present and harmless: the `hey`
+calendar source kind in `calendar/Sources.js` and the per-provider wording in
+`Model.setupHeadline`/`setupDetail` — dead branches, removable when convenient.
+
+Why not upstream's Rust backend: what it moves off the GUI thread — decoding,
+sanitizing, caching — this branch already keeps off the critical path
+(native base64, one MIME walk, the render LRU, neighbour prefetch), and most
+of its surface is providers this fork does not use. It would matter for their
+AI assistant or the standalone app; neither is wanted here.
+
 ## Housekeeping
 
 - Old remote branch names `speed-up-opening-a-message` and `remind-me` on `fork`
