@@ -1589,3 +1589,34 @@ function activityMail() {
 }
 
 console.log("test_html.js ok")
+
+// ------------------------------------------------------ pictures on their way
+//
+// With images allowed, a picture whose bytes have not arrived is drawn as a
+// transparent box of its declared size, so the text is laid out once, in its
+// final place. One with no declared size has no box to hold and waits outside
+// the document, as every blocked picture does.
+{
+  var awaiting = "<p>Hello</p>"
+    + "<img src=\"https://cdn.example.com/a.png\" width=\"300\" height=\"120\">"
+    + "<p>World</p><img src=\"https://cdn.example.com/b.png\">"
+  var pending = html.sanitize(awaiting, { allowRemoteImages: true, remoteImageData: {}, withReader: true })
+  assert.strictEqual(pending.pendingImages, 1, "the sized picture holds its place")
+  assert.strictEqual(pending.blockedImages, 1, "the unsized one waits outside")
+  assert.ok(pending.html.indexOf("<img src=\"data:image/png;base64,") >= 0)
+  assert.ok(pending.html.indexOf("width=\"300\" height=\"120\"") >= 0, "at the sender's size")
+  assert.strictEqual(pending.html.indexOf("cdn.example.com"), -1, "and nothing is fetched by Qt")
+  assert.ok(pending.reader.html.indexOf("width=\"300\" height=\"120\"") >= 0,
+    "reading mode holds the same box, both dimensions")
+
+  var arrived = html.sanitize(awaiting, { allowRemoteImages: true, withReader: true,
+    remoteImageData: { "https://cdn.example.com/a.png": "data:image/png;base64,AAAA" } })
+  assert.strictEqual(arrived.pendingImages, 0)
+  assert.ok(arrived.html.indexOf("data:image/png;base64,AAAA\" width=\"300\" height=\"120\"") >= 0,
+    "the bytes land in the same box")
+
+  var withheld = html.sanitize(awaiting, { allowRemoteImages: false, withReader: true })
+  assert.strictEqual(withheld.pendingImages, 0, "a blocked render holds nothing: nothing is coming")
+  assert.strictEqual(withheld.blockedImages, 2)
+  assert.strictEqual(withheld.html.indexOf("<img"), -1)
+}

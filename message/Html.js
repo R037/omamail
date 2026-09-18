@@ -991,6 +991,20 @@ function flattenTablesIn(node, limit, depth) {
 var MAX_RICH_TEXT = 120000
 var MAX_ELEMENTS = 2500
 var MAX_IMAGES = 24
+
+// What stands in for a picture whose bytes are still on their way: one
+// transparent pixel, drawn at the size the sender declared. The text around
+// it is then laid out once, in its final place, and the picture arriving
+// changes nothing but the pixels inside the box. A picture with no declared
+// size has no box to hold, and is left out until it arrives, as before.
+var PENDING_IMAGE = "data:image/png;base64,"
+  + "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+function declaredPixels(node, name) {
+  var value = attributeValue(node, name)
+  var match = String(value === undefined || value === null ? "" : value).match(/^\s*(\d+(?:\.\d+)?)\s*(?:px)?\s*$/i)
+  return match ? Math.round(Number(match[1])) : 0
+}
 // Backstop for anything flattening does not tame.
 var MAX_TABLES = 60
 var MAX_TABLE_DEPTH = 4
@@ -1218,6 +1232,7 @@ function sanitize(html, options) {
   var blocked = 0
   var kept = 0
   var loadable = 0
+  var pending = 0
 
   function preparedImage(source) {
     if (imageData === null || !Object.prototype.hasOwnProperty.call(imageData, source)) return ""
@@ -1247,6 +1262,13 @@ function sanitize(html, options) {
     if (imageData !== null) {
       var prepared = preparedImage(source)
       if (prepared === "") {
+        // Not here yet. Hold its place if the sender said how big it is.
+        if (declaredPixels(node, "width") > 0 && declaredPixels(node, "height") > 0) {
+          attributeOf(node, "src").value = PENDING_IMAGE
+          pending++
+          kept++
+          return true
+        }
         blocked++
         return false
       }
@@ -1337,6 +1359,8 @@ function sanitize(html, options) {
   return {
     html: text,
     blockedImages: blocked,
+    // Drawn as a box of the right size, waiting for the bytes.
+    pendingImages: pending,
     images: kept,
     remoteImages: loadable,
     remoteImageSources: remoteSources,
@@ -2024,6 +2048,14 @@ function readerAppendImage(state, node, ctx) {
       renderedSource = ""
   }
 
+  // A remote picture still on its way holds its place when its size is
+  // known, for the same reason the formatted view holds it: the reading
+  // column must not shift under the eye when the bytes land.
+  var awaited = kind === "remote" && ctx.allowImages && ctx.kept < ctx.limit
+    && ctx.imageData !== null && renderedSource === ""
+    && readerImageDimension(node, "width") > 0 && readerImageDimension(node, "height") > 0
+  if (awaited) renderedSource = PENDING_IMAGE
+
   if (kind === "inline" || (kind === "remote" && ctx.allowImages
     && ctx.kept < ctx.limit && renderedSource !== "")) {
     if (kind === "remote") ctx.kept++
@@ -2037,8 +2069,10 @@ function readerAppendImage(state, node, ctx) {
     // Qt clamps that width without scaling an explicit height, which distorts
     // the picture. Small icons never meet that clamp and need both dimensions
     // to keep native high-resolution artwork at interface size.
-    if (height > 0 && width > 0 && width <= MAX_READER_INLINE_IMAGE
-      && height <= MAX_READER_INLINE_IMAGE)
+    // The placeholder is one pixel, and one pixel scaled to a width alone is
+    // a square: it needs both, to be the box the picture will fill.
+    if (height > 0 && width > 0 && (awaited
+      || (width <= MAX_READER_INLINE_IMAGE && height <= MAX_READER_INLINE_IMAGE)))
       image.attrs.push({ name: "height", value: String(height) })
     readerTarget(state).push(image)
     state.filled = true

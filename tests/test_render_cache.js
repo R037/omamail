@@ -13,6 +13,10 @@ assert.strictEqual(cache.key("<p>a</p>", false), cache.key("<p>a</p>", false))
 assert.notStrictEqual(cache.key("<p>a</p>", false), cache.key("<p>a</p>", true),
   "withPlainText changes what Html.sanitize computes, so it is part of the question")
 assert.notStrictEqual(cache.key("<p>a</p>", false), cache.key("<p>b</p>", false))
+assert.notStrictEqual(cache.key("<p>a</p>", false, false), cache.key("<p>a</p>", false, true),
+  "the blocked render and the one holding boxes for pictures are two answers")
+assert.strictEqual(cache.key("<p>a</p>", false), cache.key("<p>a</p>", false, false),
+  "and not saying is blocked")
 
 // --------------------------------------------------------------- hit / miss
 

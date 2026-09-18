@@ -292,8 +292,17 @@ Item {
   property var remoteImageData: ({})
   property var selectedRemoteImageSources: []
   property var imageFetchQueue: []
-  property var imageFetchProcess: null
+  // The fetches on the wire right now, a few at a time: pictures from the
+  // same host share a connection and a message's twenty arrive together
+  // rather than one after another, each a process of its own.
+  property var imageFetchProcesses: []
+  readonly property int maxImageFetches: 4
   property int imageFetchSerial: 0
+  // What has arrived and is not yet drawn. The document is rebuilt once for
+  // the lot rather than once per picture — every rebuild is a parse and a
+  // layout of the whole message, and with a box held for each picture there
+  // is nothing to see between one arrival and the next anyway.
+  property var imageFetchArrived: ({})
   // Prepared remote bytes stay separate from the source body. Qt receives only
   // completed data URIs, never an address whose pending load would draw its
   // built-in broken placeholder or whose redirect could escape the URL gate.
@@ -842,10 +851,7 @@ Item {
     selectedRemoteImageSources = []
     imageFetchQueue = []
     imageFetchSerial++
-    if (imageFetchProcess) {
-      imageFetchProcess.destroy()
-      imageFetchProcess = null
-    }
+    stopImageFetches()
     selectedBlockedImages = 0
     selectedRemoteImages = 0
     selectedImages = []
@@ -1165,7 +1171,7 @@ Item {
     bodyCache.put(id, record)
     // The parse is the other half of the wait, and it is done here, after the
     // read, one document per tick, so it never lands on top of a paint.
-    if (parts.html !== "" && !alwaysShowImages && parts.html.length <= Html.MAX_RICH_TEXT) {
+    if (parts.html !== "" && parts.html.length <= Html.MAX_RICH_TEXT) {
       warmQueue = warmQueue.concat([{ html: parts.html, withPlainText: parts.body.source === "html" }])
       warmTimer.start()
     }
@@ -1175,11 +1181,14 @@ Item {
   // for the blocked render — the only one the cache holds — and nothing
   // written to what is on screen.
   function warmRender(html, withPlainText) {
-    var cacheKey = RenderCache.key(html, withPlainText === true)
+    // The render the next message will open on: blocked, or — with images
+    // always on — allowed with nothing fetched yet, every picture a box.
+    var allow = alwaysShowImages
+    var cacheKey = RenderCache.key(html, withPlainText === true, allow)
     if (RenderCache.get(renderCache, cacheKey)) return
     var ready = Html.sanitize(html, ({
-      allowRemoteImages: false,
-      remoteImageData: null,
+      allowRemoteImages: allow,
+      remoteImageData: allow ? ({}) : null,
       withPlainText: withPlainText === true,
       withReader: true
     }))
@@ -1224,15 +1233,14 @@ Item {
   // parse of the whole message to work out what was just worked out.
   function renderSource(source, withPlainText) {
     sourceHtml = String(source || "")
-    // Every message opens with remote images blocked — asking to see them is
-    // a separate, per-message action, and its own render is never what a
-    // second look at this same message would want back, since a fetched
-    // image lives in `remoteImageData` for exactly as long as this message
-    // stays selected. Restricting the cache to the blocked render is what
-    // keeps it a pure function of the two things in the key: nothing else
-    // `Html.sanitize` is given here ever varies for a fixed `source`.
-    var useCache = !remoteImagesAllowed
-    var cacheKey = useCache ? RenderCache.key(sourceHtml, withPlainText === true) : ""
+    // A render with fetched pictures in it is never what a second look at
+    // this same message would want back: the bytes live in `remoteImageData`
+    // for exactly as long as this message stays selected. The other two
+    // renders — blocked, and allowed with nothing fetched yet, every picture
+    // a box of its declared size — are pure functions of the source and the
+    // key, and they are what every message opens on.
+    var useCache = !remoteImagesAllowed || Object.keys(remoteImageData).length === 0
+    var cacheKey = useCache ? RenderCache.key(sourceHtml, withPlainText === true, remoteImagesAllowed) : ""
     var ready = useCache ? RenderCache.get(renderCache, cacheKey) : undefined
     if (ready) {
       renderCache = RenderCache.touch(renderCache, cacheKey)
@@ -1278,41 +1286,72 @@ Item {
     fetchNextImage(imageFetchSerial)
   }
 
+  function stopImageFetches() {
+    for (var i = 0; i < imageFetchProcesses.length; i++) imageFetchProcesses[i].destroy()
+    imageFetchProcesses = []
+    imageFetchArrived = ({})
+    imageSettleTimer.stop()
+  }
+
   function fetchNextImage(serial) {
     if (serial !== imageFetchSerial) return
-    if (imageFetchQueue.length === 0) {
-      remoteImagesLoading = false
-      imageFetchProcess = null
-      return
+    while (imageFetchQueue.length > 0 && imageFetchProcesses.length < maxImageFetches) {
+      var queue = imageFetchQueue.slice(0)
+      var source = String(queue.shift())
+      imageFetchQueue = queue
+      startImageFetch(serial, source)
     }
-    var queue = imageFetchQueue.slice(0)
-    var source = String(queue.shift())
-    imageFetchQueue = queue
+    if (imageFetchQueue.length === 0 && imageFetchProcesses.length === 0) {
+      remoteImagesLoading = false
+      drawArrivedImages()
+    }
+  }
+
+  function startImageFetch(serial, source) {
     var request = imageFetchComponent.createObject(root, {
       command: [pluginDir + "/scripts/image-fetch.sh"],
       requestLine: Mail.encodeBase64(source)
     })
-    imageFetchProcess = request
-    if (!request) {
-      fetchNextImage(serial)
-      return
-    }
+    if (!request) return
+    imageFetchProcesses = imageFetchProcesses.concat([request])
     request.finished.connect(function(data) {
+      if (serial !== root.imageFetchSerial) {
+        request.destroy()
+        return
+      }
+      var rest = []
+      for (var i = 0; i < root.imageFetchProcesses.length; i++) {
+        if (root.imageFetchProcesses[i] !== request) rest.push(root.imageFetchProcesses[i])
+      }
+      root.imageFetchProcesses = rest
       request.destroy()
-      if (serial !== root.imageFetchSerial) return
-      root.imageFetchProcess = null
       if (data !== "") {
-        var prepared = ({})
-        for (var key in root.remoteImageData) prepared[key] = root.remoteImageData[key]
-        prepared[source] = data
-        root.remoteImageData = prepared
-        root.renderSource(root.sourceHtml)
+        var arrived = ({})
+        for (var key in root.imageFetchArrived) arrived[key] = root.imageFetchArrived[key]
+        arrived[source] = data
+        root.imageFetchArrived = arrived
+        // The lot is drawn together when the last one lands; this is for a
+        // batch that is taking its time, so one slow host does not keep the
+        // pictures already here off the screen.
+        if (!imageSettleTimer.running) imageSettleTimer.start()
       }
       root.fetchNextImage(serial)
     })
     request.running = true
   }
 
+  // What has arrived, into the document, in one rebuild.
+  function drawArrivedImages() {
+    var names = Object.keys(imageFetchArrived)
+    if (names.length === 0) return
+    var prepared = ({})
+    for (var key in remoteImageData) prepared[key] = remoteImageData[key]
+    for (var i = 0; i < names.length; i++) prepared[names[i]] = imageFetchArrived[names[i]]
+    imageFetchArrived = ({})
+    imageSettleTimer.stop()
+    remoteImageData = prepared
+    renderSource(sourceHtml)
+  }
 
   function clearSelection() {
     detailSerial++
@@ -1337,10 +1376,7 @@ Item {
     selectedRemoteImageSources = []
     imageFetchQueue = []
     imageFetchSerial++
-    if (imageFetchProcess) {
-      imageFetchProcess.destroy()
-      imageFetchProcess = null
-    }
+    stopImageFetches()
     selectedImages = []
     selectedBlockedImages = 0
     selectedRemoteImages = 0
@@ -2250,6 +2286,15 @@ Item {
     running: root.ready
     repeat: true
     onTriggered: root.syncTick++
+  }
+
+  // Pictures that arrived while others are still on their way are drawn
+  // after this long rather than at once: the batch usually finishes inside
+  // it, and then there is one rebuild instead of two.
+  Timer {
+    id: imageSettleTimer
+    interval: 400
+    onTriggered: root.drawArrivedImages()
   }
 
   // One parse per tick, with a frame between them: three neighbours arriving

@@ -23,11 +23,13 @@ function empty() {
 // The one thing worth getting right: two calls that mean the same question —
 // the same markup, asked to be read the same way — have to land on the same
 // key, and nothing else may. `withPlainText` changes what `Html.sanitize`
-// computes, so it is part of the question; remote images are not, because a
-// render with them allowed is never the one this is asked to remember — see
-// the caller.
-function key(source, withPlainText) {
-  return (withPlainText ? "1" : "0") + String(source || "")
+// computes, so it is part of the question, and so is whether remote pictures
+// are allowed: with them blocked they are left out, with them allowed and not
+// yet fetched they are drawn as boxes of their declared size. Both of those
+// are pure functions of the source. A render with fetched bytes in it is
+// not, and is never what this is asked to remember — see the caller.
+function key(source, withPlainText, allowImages) {
+  return (withPlainText ? "1" : "0") + (allowImages ? "a" : "b") + String(source || "")
 }
 
 function get(store, cacheKey) {
