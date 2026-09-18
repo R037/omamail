@@ -621,77 +621,34 @@ Item {
     }
   }
 
-  // The setup pages. Built by the Loader above, one at a time, so the ones not
-  // in use hold no half-typed fields and no state to go stale.
-  Component {
-    id: providerPickerPage
-
-    ProviderPicker {
-      textColor: root.foreground
-      dimColor: root.dim
-      accentColor: root.accent
-      panelFontFamily: root.fontFamily
-      canLeave: root.anyReady
-      onBackRequested: {
-        root.pickingProvider = false
-        root.editingProvider = ""
-        root.setupVisible = false
-      }
-      onChosen: function(providerId) {
-        root.pickingProvider = false
-        root.providerChosen = true
-        root.editingProvider = providerId
-        // On first run the row already exists and only needs its kind; after
-        // that, adding a mailbox is what makes one.
-        if (root.service && root.service.hasSavedAccounts) {
-          root.openingNewMailbox = true
-          root.accountDraftOpen = true
-          root.service.addAccount(providerId)
-        } else if (root.service) {
-          root.service.configureCurrentAccount({ provider: providerId })
-        }
-      }
+  // There is one kind of mailbox, so the question the picker used to ask is
+  // answered the moment it would have been put. The rest of the setup flow —
+  // "chosen" latching, a draft row for a second mailbox, the first-run row
+  // learning its kind — is unchanged, which is why this is a function and not
+  // a deleted step.
+  function chooseGmail() {
+    if (!showPicker) return
+    pickingProvider = false
+    providerChosen = true
+    editingProvider = "gmail"
+    // On first run the row already exists and only needs its kind; after
+    // that, adding a mailbox is what makes one.
+    if (service && service.hasSavedAccounts) {
+      openingNewMailbox = true
+      accountDraftOpen = true
+      service.addAccount("gmail")
+    } else if (service) {
+      service.configureCurrentAccount({ provider: "gmail" })
     }
   }
+  onShowPickerChanged: if (showPicker) Qt.callLater(root.chooseGmail)
 
+  // The setup page. Built by the Loader above only while it is open, so a page
+  // not in use holds no half-typed fields and no state to go stale.
   Component {
     id: gmailSetupPage
 
     SetupPage {
-      service: root.service
-      textColor: root.foreground
-      dimColor: root.dim
-      dangerColor: root.danger
-      accentColor: root.accent
-      panelFontFamily: root.fontFamily
-      canLeave: root.anyReady
-      accountCount: root.service ? root.service.accountCount : 1
-      onBackRequested: root.leaveSetup()
-      onRemoveRequested: root.removeCurrentAccountFromEditor()
-    }
-  }
-
-  Component {
-    id: heySetupPage
-
-    HeySetupPage {
-      service: root.service
-      textColor: root.foreground
-      dimColor: root.dim
-      dangerColor: root.danger
-      accentColor: root.accent
-      panelFontFamily: root.fontFamily
-      canLeave: root.anyReady
-      accountCount: root.service ? root.service.accountCount : 1
-      onBackRequested: root.leaveSetup()
-      onRemoveRequested: root.removeCurrentAccountFromEditor()
-    }
-  }
-
-  Component {
-    id: imapSetupPage
-
-    ImapSetupPage {
       service: root.service
       textColor: root.foreground
       dimColor: root.dim
@@ -1321,23 +1278,15 @@ Item {
             width: setupFlick.width
             implicitHeight: setup.implicitHeight
 
-          // Setups that share nothing but their place on screen: a chooser for
-          // a mailbox whose kind is not settled yet, then whichever page that
-          // kind needs — a Cloud walkthrough, a program and a button, or a
-          // server and a password. A Loader rather than four visibilities, so
-          // the pages not in use hold no fields and no state.
+          // A Loader rather than a visibility, so the page holds no fields and
+          // no state while it is not up.
           Loader {
             id: setup
             // A measure this long is unreadable across a wide window, so it is
             // capped rather than stretched.
             anchors.horizontalCenter: parent.horizontalCenter
             width: Math.min(setupHolder.width, Style.space(560))
-            readonly property string kind: Model.setupProvider(root.editingProvider,
-              root.service ? root.service.providerId : "")
-            sourceComponent: root.showPicker
-              ? providerPickerPage
-              : (setup.kind === "imap" ? imapSetupPage
-                : (setup.kind === "hey" ? heySetupPage : gmailSetupPage))
+            sourceComponent: gmailSetupPage
           }
           }
         }

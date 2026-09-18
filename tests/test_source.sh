@@ -138,8 +138,8 @@ if awk '
   in_button && /^[[:space:]]*hoverColor:/ { print NR ":" $0; found = 1 }
   in_button && /^[[:space:]]*\}/ { in_button = 0 }
   END { exit !found }
-' components/ImapSetupPage.qml; then
-  fail "ImapSetupPage assigns the non-existent IconTextButton.hoverColor property"
+' -- "${QML_FILES[@]}"; then
+  fail "a component assigns the non-existent IconTextButton.hoverColor property"
 fi
 for file in components/MessageList.qml components/ReaderBlankSlate.qml; do
   if grep -n 'resultSummary' "$file"; then
@@ -506,8 +506,8 @@ grep -q 'signal editRequested(int index)' components/SettingsPage.qml \
 if grep -qE 'signal (signIn|signOut|remove)Requested' components/SettingsPage.qml; then
   fail "sign-in, sign-out and removal belong on the account edit page"
 fi
-grep -q 'signal removeRequested()' components/ImapSetupPage.qml \
-  || fail "the IMAP edit page needs to own account removal"
+grep -q 'signal removeRequested()' components/SetupPage.qml \
+  || fail "the account edit page needs to own account removal"
 grep -q 'service\.discardCurrentDraft()' App.qml \
   || fail "leaving Add account must discard its unnamed draft"
 if awk '
@@ -519,16 +519,9 @@ if awk '
   fail "Add account must not persist its blank draft"
 fi
 
-# An IMAP address is account identity; its login username may legitimately be
-# different and must never replace it while editing or loading the profile.
-grep -q 'addressField\.text = service ? service\.accountAddress' components/ImapSetupPage.qml \
-  || fail "IMAP Edit must read the saved account address separately from username"
-grep -q 'email: root\.configuredEmail' account/MailAccount.qml \
-  || fail "the IMAP profile must preserve the configured account address"
-
 # Destructive account actions consume the semantic danger role passed from the
 # app. Calling it dim or urgent at the button loses the action's meaning.
-for page in components/SetupPage.qml components/ImapSetupPage.qml; do
+for page in components/SetupPage.qml; do
   grep -q 'required property color dangerColor' "$page" \
     || fail "$page must receive the semantic danger colour"
   awk '
@@ -586,7 +579,7 @@ grep -q 'accountId = Accounts.accountId(accountEmail, providerId)' account/MailA
 # Native desktop controls retain the arrow cursor. A pointing hand is reserved
 # for actual links such as URLs inside the message reader.
 for file in components/IconButton.qml components/IconTextButton.qml components/AppMenu.qml \
-  components/MessageMenu.qml components/AccountSwitcher.qml components/ProviderPicker.qml \
+  components/MessageMenu.qml components/AccountSwitcher.qml \
   components/MailboxSidebar.qml components/UserBar.qml; do
   if grep -n 'PointingHandCursor' "$file"; then
     fail "$file uses a web-link cursor for a native control"
@@ -634,8 +627,8 @@ done
 # Feature views receive semantic colours from App. Reading theme roles locally
 # makes the same concept drift between pages and prevents App from naming it.
 for file in components/AppMenu.qml components/MessageMenu.qml components/AccountSwitcher.qml \
-  components/ProviderPicker.qml components/MailboxTabs.qml components/SetupPage.qml \
-  components/ImapSetupPage.qml components/KeyHints.qml components/ImagePopover.qml \
+  components/MailboxTabs.qml components/SetupPage.qml \
+  components/KeyHints.qml components/ImagePopover.qml \
   components/ComposeView.qml; do
   if grep -nE '(^|[^A-Za-z])Color\.' "$file"; then
     fail "$file reads theme colours instead of receiving semantic roles"
@@ -691,22 +684,6 @@ awk '
   END { exit !(fill && padding) }
 ' components/ComposeView.qml \
   || fail "the From dropdown must share the TextField fill and vertical sizing"
-
-# Sign out and removal are peer account actions. Removal stays last in the
-# action row instead of falling onto a detached row beneath it.
-awk '
-  /text: "Sign out"/ { saw_sign_out = 1 }
-  saw_sign_out && /text: "Remove account"/ { saw_remove_after = 1 }
-  saw_remove_after && /bordered: false/ { ghost = 1 }
-  END { exit !(saw_sign_out && saw_remove_after && ghost) }
-' components/ImapSetupPage.qml \
-  || fail "IMAP Remove account must be the trailing danger ghost beside Sign out"
-awk '
-  /^  Button \{/ { top_button = 1; next }
-  top_button && /text: "Remove account"/ { exit 1 }
-  top_button && /^  \}/ { top_button = 0 }
-' components/ImapSetupPage.qml \
-  || fail "IMAP Remove account must not be detached from the account action row"
 
 # A mailbox row is the selected one only when no search is standing on top of
 # it, and that guard is a continuation line. Inserting a binding between the two
@@ -771,8 +748,6 @@ grep -q 'install-mailto.sh' install.sh \
   || fail "install.sh must register the mailto desktop handler"
 grep -q 'registerMailtoHandler' Service.qml \
   || fail "the service must register the mailto handler when the plugin loads"
-grep -q 'bcc: Mail.headerFrom(parsed.headers, "Bcc")' providers/HeyClient.qml \
-  || fail "HEY must pass a mailto Bcc through to hey compose"
 grep -q 'signal mailtoRequested(string url)' components/MessageReader.qml \
   || fail "a mailto in a message body must compose here, not leave through xdg-open"
 if awk '
@@ -815,7 +790,7 @@ grep -q 'from: from' account/MailAccount.qml \
   || fail "MailAccount must pass the selected From address to Message.js"
 grep -q 'fromHeader(values.from, values.fromName)' message/Message.js \
   || fail "Message.js must write the selected From header, display name and all"
-for client in providers/GmailApiClient.qml providers/ImapClient.qml; do
+for client in providers/GmailApiClient.qml; do
   grep -q 'function getSendAs' "$client" \
     || fail "$client must implement the provider-neutral sender-list operation"
 done

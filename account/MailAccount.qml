@@ -16,7 +16,6 @@ import "../message/Snooze.js" as Snooze
 import "Model.js" as Model
 import "Accounts.js" as Accounts
 import "../providers/Registry.js" as Provider
-import "../providers/ImapProtocol.js" as Imap
 import "../providers/OAuth.js" as OAuth
 
 // One mailbox: its sign-in, its cache, its messages. Service.qml owns a set of
@@ -50,7 +49,6 @@ Item {
   property string providerId: Provider.DEFAULT_ID
   // Server settings for an IMAP account, straight off the account entry. Unused
   // by the others, and normalised before anything can dial one.
-  property var imapSettings: null
   // Only the mailbox that predates multi-account may claim the old
   // client-keyed refresh token. See AuthManager.mayAdoptLegacyToken.
   property bool mayAdoptLegacyToken: true
@@ -2188,8 +2186,7 @@ Item {
   // has no business doing either.
   Loader {
     id: authLoader
-    sourceComponent: root.providerId === "imap" ? imapAuthComponent
-      : (root.providerId === "hey" ? heyAuthComponent : gmailAuthComponent)
+    sourceComponent: gmailAuthComponent
   }
 
   // The client takes the manager as a required property, so it cannot be built
@@ -2197,8 +2194,7 @@ Item {
   Loader {
     id: apiLoader
     active: !!authLoader.item
-    sourceComponent: root.providerId === "imap" ? imapClientComponent
-      : (root.providerId === "hey" ? heyClientComponent : gmailClientComponent)
+    sourceComponent: gmailClientComponent
   }
 
   Component {
@@ -2222,59 +2218,8 @@ Item {
   }
 
   Component {
-    id: imapAuthComponent
-
-    ImapAuth {
-      pluginDir: root.pluginDir
-      accountId: root.accountId
-      // Normalised here rather than trusted from the file: a host that arrived
-      // in a hand-edited accounts.json has to pass the same check as one the
-      // user typed into the form.
-      settings: Imap.normalizeSettings(root.imapSettings)
-
-      onLoginSucceeded: {
-        root.lastError = lastError
-        root.afterSignIn()
-      }
-      onLoggedOut: root.clearNotice()
-      onCredentialsSaved: root.note("Mailbox saved")
-      onSessionUnavailable: function(reason) { root.fail(reason) }
-    }
-  }
-
-  Component {
-    id: heyAuthComponent
-
-    HeyAuth {
-      pluginDir: root.pluginDir
-      accountId: root.accountId
-
-      onLoginSucceeded: {
-        root.lastError = lastError
-        root.afterSignIn()
-      }
-      onLoggedOut: root.clearNotice()
-      onCredentialsSaved: root.note("Mailbox saved")
-      onSessionUnavailable: function(reason) { root.fail(reason) }
-    }
-  }
-
-  Component {
     id: gmailClientComponent
     GmailApiClient { auth: authLoader.item }
-  }
-
-  Component {
-    id: heyClientComponent
-    HeyClient { auth: authLoader.item }
-  }
-
-  Component {
-    id: imapClientComponent
-    ImapClient {
-      auth: authLoader.item
-      email: root.configuredEmail
-    }
   }
 
   CacheStore {

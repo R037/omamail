@@ -19,18 +19,15 @@
   },
   "barWidget": {
     "displayName": "Omamail",
-    "description": "Unread mail count in the bar; the inbox itself opens as its own window. Works with Gmail, HEY and any IMAP mail server.",
+    "description": "Unread mail count in the bar; the inbox itself opens as its own window. Gmail only.",
     "category": "Communication",
     "aliases": [
       "mail",
       "email",
       "gmail",
-      "hey",
-      "imap",
       "inbox",
       "e-mail",
-      "mailbox",
-      "smtp"
+      "mailbox"
     ],
     "allowMultiple": false,
     "defaultSection": "right",

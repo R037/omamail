@@ -302,73 +302,17 @@ assert.strictEqual(accounts.count(accounts.discardDraftAt(pendingList, 0)), 3)
   assert.strictEqual(accounts.makeAccount({ email: "jane@gmail.com" }).provider, "gmail")
   assert.strictEqual(accounts.makeAccount({ email: "j@x.com", provider: "" }).provider, "gmail")
   assert.strictEqual(accounts.makeAccount({ email: "j@x.com", provider: "pigeon" }).provider, "gmail")
-  assert.strictEqual(accounts.makeAccount({ email: "j@x.com", provider: "IMAP" }).provider, "imap")
-  assert.strictEqual(accounts.makeAccount({ email: "j@x.com", provider: " hey " }).provider, "hey")
+  // This fork is Gmail only: a provider another build knew is Gmail here too.
+  assert.strictEqual(accounts.makeAccount({ email: "j@x.com", provider: "IMAP" }).provider, "gmail")
+  assert.strictEqual(accounts.makeAccount({ email: "j@x.com", provider: " hey " }).provider, "gmail")
 
   // A Gmail account keeps the bare address as its id, so nothing already on
   // disk — its cache directory, its keyring entry, the activeId in the file —
   // needs migrating when this build first runs.
   assert.strictEqual(accounts.makeAccount({ email: "Jane@Gmail.com" }).id, "jane@gmail.com")
-  assert.strictEqual(
-    accounts.makeAccount({ email: "jane@fastmail.com", provider: "imap" }).id,
-    "imap:jane@fastmail.com")
-
-  // The same address reached two ways is two mailboxes, not one overwriting
-  // the other.
-  let list = accounts.emptyList()
-  list = accounts.add(list, { email: "jane@gmail.com", provider: "gmail" })
-  list = accounts.add(list, { email: "jane@gmail.com", provider: "imap" })
-  assert.strictEqual(accounts.count(list), 2,
-    "one address over two providers is two accounts")
-  assert.strictEqual(accounts.find(list, "jane@gmail.com").provider, "gmail")
-  assert.strictEqual(accounts.find(list, "imap:jane@gmail.com").provider, "imap")
-
-  // Re-adding the same one still replaces in place rather than appending.
-  list = accounts.add(list, { email: "jane@gmail.com", provider: "imap", label: "Work" })
-  assert.strictEqual(accounts.count(list), 2)
-  assert.strictEqual(accounts.find(list, "imap:jane@gmail.com").label, "Work")
-
-  // Removing one leaves the other.
-  list = accounts.remove(list, "imap:jane@gmail.com")
-  assert.strictEqual(accounts.count(list), 1)
-  assert.strictEqual(accounts.find(list, "jane@gmail.com").provider, "gmail")
 }
 
-// ------------------------------------------------------------ IMAP settings
-//
-// Not secret — the password is, and that lives in the keyring — so these ride
-// on the account and survive the round trip through the file.
-
 {
-  const saved = accounts.serialize(accounts.add(accounts.emptyList(), {
-    email: "jane@fastmail.com",
-    provider: "imap",
-    imap: {
-      imapHost: "imap.fastmail.com", imapPort: 993,
-      smtpHost: "smtp.fastmail.com", smtpPort: 465,
-      username: "jane@fastmail.com"
-    }
-  }))
-  const reloaded = accounts.find(accounts.load(saved), "imap:jane@fastmail.com")
-  assert.strictEqual(reloaded.provider, "imap")
-  assert.strictEqual(reloaded.imap.imapHost, "imap.fastmail.com")
-  assert.strictEqual(reloaded.imap.smtpPort, 465)
-  assert.strictEqual(reloaded.imap.username, "jane@fastmail.com")
-  assert.strictEqual(reloaded.imap.insecure, false)
-
-  // Ports out of range fall back rather than reaching a URL.
-  const clamped = accounts.makeAccount({
-    email: "j@x.com", provider: "imap",
-    imap: { imapPort: 0, smtpPort: 999999 }
-  })
-  assert.strictEqual(clamped.imap.imapPort, 993)
-  assert.strictEqual(clamped.imap.smtpPort, 465)
-
-  // A Gmail account still serialises without IMAP settings meaning anything.
-  const gmail = accounts.makeAccount({ email: "j@gmail.com", clientId: "abc" })
-  assert.strictEqual(gmail.imap.imapHost, "")
-  assert.strictEqual(gmail.clientId, "abc")
-
   // An accounts.json written by the previous build has no provider field at
   // all, and every account in it must come back as a working Gmail account.
   const legacy = accounts.load(JSON.stringify({

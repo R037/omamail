@@ -32,8 +32,8 @@ command -v omarchy >/dev/null 2>&1 || {
 # None of these are hard requirements for installing: the window opens without
 # them and the setup page names whichever is missing. Installing them is the
 # user's call, and this script never does it for them.
-# socat, openssl and xdg-open are the Google sign-in; curl is every IMAP
-# mailbox; secret-tool holds the secret either way.
+# socat, openssl and xdg-open are the Google sign-in; curl fetches calendars
+# and images; secret-tool holds the secret.
 missing=()
 for tool in socat secret-tool openssl xdg-open curl; do
   command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")

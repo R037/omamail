@@ -24,7 +24,6 @@ var AUTH = "oauth"
 // adding" — and a mark answers that before any of the words do.
 //
 // One file for both, because Google's mark is square and reads at either size.
-// HEY has a second, wider one; see `Hey.LOGO`.
 var MARK = "gmail.png"
 
 var CAPABILITIES = {

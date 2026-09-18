@@ -3,11 +3,6 @@ QML_FILES := Service.qml BarWidget.qml App.qml \
 	account/MailAccount.qml \
 	cache/CacheStore.qml cache/BodyCache.qml \
 	providers/AuthManager.qml providers/GmailApiClient.qml \
-	providers/ImapAuth.qml providers/ImapClient.qml \
-	providers/HeyAuth.qml providers/HeyClient.qml \
-	components/ImapSetupPage.qml \
-	components/HeySetupPage.qml \
-	components/ProviderPicker.qml \
 	components/GmailIcon.qml \
 	components/ProviderLogo.qml \
 	components/ProviderHero.qml \
@@ -86,8 +81,6 @@ test-js:
 	node tests/test_accounts.js
 	node tests/test_menu.js
 	node tests/test_provider.js
-	node tests/test_imap.js
-	node tests/test_hey.js
 
 test-shell:
 	python3 tests/test_contacts.py
@@ -97,7 +90,6 @@ test-shell:
 	bash tests/test_service_source.sh
 	bash tests/test_install.sh
 	bash tests/test_mailto.sh
-	bash tests/test_transport.sh
 	bash tests/test_unsubscribe_transport.sh
 	bash tests/test_image_fetch.sh
 	bash tests/test_attachment_open.sh

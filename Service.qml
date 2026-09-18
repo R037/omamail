@@ -289,7 +289,6 @@ Item {
     for (var key in accounts[index]) entry[key] = accounts[index][key]
     if (raw.provider !== undefined) entry.provider = raw.provider
     if (raw.email !== undefined) entry.email = raw.email
-    if (raw.imap !== undefined) entry.imap = raw.imap
     if (raw.label !== undefined) entry.label = raw.label
 
     var updated = Accounts.emptyList()
@@ -908,7 +907,6 @@ Item {
       // servers it talks to. Both come off the account entry, so changing an
       // account's provider in the file rebuilds it as that provider.
       providerId: entry ? entry.provider : Provider.DEFAULT_ID
-      imapSettings: entry ? entry.imap : null
       // Only a Gmail account has a client-keyed refresh token to inherit, and
       // only the first one may claim it.
       mayAdoptLegacyToken: index === 0 && (!entry || entry.provider === "gmail")

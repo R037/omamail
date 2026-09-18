@@ -1,8 +1,6 @@
 .pragma library
 
 .import "Gmail.js" as Gmail
-.import "Imap.js" as Imap
-.import "Hey.js" as Hey
 
 // What kind of mail service an account is, and what the rest of the plugin may
 // therefore ask of it.
@@ -132,7 +130,10 @@ function define(source) {
 // service of their own first, then the one that is every other mailbox. IMAP is
 // last because it is the answer for a server this list does not name, and a
 // chooser that opened with it would ask the question backwards.
-var ALL = [define(Gmail), define(Hey), define(Imap)]
+// One provider. This fork is Gmail only — see FORK.md — and the registry
+// stays because everything above it asks a provider rather than assuming one,
+// which is still the right shape for the code even with a single answer.
+var ALL = [define(Gmail)]
 
 var DEFAULT_ID = "gmail"
 
