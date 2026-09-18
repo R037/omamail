@@ -80,6 +80,34 @@ sanitizing, caching — this branch already keeps off the critical path
 of its surface is providers this fork does not use. It would matter for their
 AI assistant or the standalone app; neither is wanted here.
 
+## Tried and closed: a browser engine for the body
+
+2026-09-18. `qt6-webengine` is installed and the `QtWebEngine` QML module is
+present, and this Qt (6.11) tolerates the late `QtWebEngineQuick::initialize()`
+that a plugin is stuck with — so it was worth a spike: a throwaway Quickshell
+config with one `WebEngineView`, run as a second instance. It never paints:
+Chromium aborts the whole process at init with
+
+    FATAL: Argument list is empty, the program name is not passed to
+    QCoreApplication. base::CommandLine cannot be properly initialized.
+
+Quickshell builds its `QCoreApplication` with an empty argument list — on
+purpose, after parsing its own flags, and with or without its crash handler
+(`QS_DISABLE_CRASH_HANDLER=1` makes no difference). Chromium's `CommandLine`
+needs `argv[0]`. Nothing on the QML side can change the host's argv, so a
+`WebEngineView` inside Omamail would take the desktop shell down the moment
+it was created. The repo's own "no browser engine" note (`README.md`,
+`docs/SPEC.md`) stands, for a different reason than it gives.
+
+What would reopen it: Quickshell passing a non-empty argv (a one-line change
+there — worth an upstream issue), and then the late-init deprecation not
+having become a failure. The plan for that day is in
+`~/.claude/plans/to-improve-scrolling-performance-wise-lerdorf.md`: a
+`renderer: "web"` sanitize option keeping the security rules and dropping
+the Qt workarounds, an opt-in fourth body mode, the view loaded only while
+in use. The screenshot-plus-link-map route was considered and rejected: no
+text selection, a re-render per width change, and the most plumbing.
+
 ## Housekeeping
 
 - Old remote branch names `speed-up-opening-a-message` and `remind-me` on `fork`
