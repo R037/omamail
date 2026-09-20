@@ -55,6 +55,16 @@ Item {
     Qt.openUrlExternally(url)
   }
 
+  // Space-bar paging, the way a browser reads a long page: half the visible
+  // body per press, clamped so it neither overshoots the end nor rubber-bands
+  // past the top — this is a jump, not a flick, and StopAtBounds only stops a
+  // drag, not a value written straight to contentY.
+  function pageBody(direction) {
+    var max = Math.max(0, bodyFlick.contentHeight - bodyFlick.height)
+    bodyFlick.contentY = Math.max(0, Math.min(max,
+      bodyFlick.contentY + direction * bodyFlick.height * 0.5))
+  }
+
   readonly property var summary: service ? service.selectedMessage : null
   // Already sanitised by the service, remote images and all removed. Qt's rich
   // text engine fetches an <img src="https://..."> for real, so leaving them in

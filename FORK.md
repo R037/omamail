@@ -24,6 +24,7 @@ and both have been cheap to follow (see "Keeping up").
 | Select text in the reader → clipboard | — | `MessageReader.qml` `copySelectionTimer` |
 | Bare email addresses in bodies become mailto links | — | `Html.js` `linkifyEmails` (in `serializeInto`) |
 | Hover fill only for a pointer that moved (no trailing highlight) | — | `MessageRow.qml` `pointerHere`, `MessageList.qml` `pointerAt` |
+| Space-bar paging in the reader, browser-style | `Space` / `Shift+Space` | `keys/Keymap.js`, `MessageReader.qml` `pageBody` |
 | Perf: native base64 decode, one MIME walk, sanitize LRU, cache-hit skips | — | `Message.js`, `cache/RenderCache.js`, `MailAccount.select` |
 | Helper scripts found from `Service.qml`'s own path (Omarchy hides `__sourceDir`) | — | `Service.qml` `pluginDir` — upstream has the same fix (#162) |
 

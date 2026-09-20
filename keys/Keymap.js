@@ -158,6 +158,14 @@ var BINDINGS = [
   { id: "zoomReset", keys: ["Ctrl+Shift+0"], contexts: ["reader"],
     group: "Reading", label: "Reset the zoom" },
 
+  // Space bar paging, the way a browser reads a long page. Reader-only, so a
+  // search field or a compose body still gets a literal space typed into it —
+  // the window-level Shortcut is simply disabled outside this context.
+  { id: "scrollPageDown", keys: ["Space"], contexts: ["reader"],
+    group: "Reading", label: "Scroll down half a page" },
+  { id: "scrollPageUp", keys: ["Shift+Space"], contexts: ["reader"],
+    group: "Reading", label: "Scroll up half a page" },
+
   { id: "refresh", keys: ["F5"], contexts: ANY,
     group: "Mailbox", label: "Check for mail" },
   { id: "settings", keys: ["Ctrl+,"], contexts: ANY,

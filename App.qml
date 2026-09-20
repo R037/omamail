@@ -525,6 +525,8 @@ Item {
     if (id === "zoomIn") return zoomBy(0.1)
     if (id === "zoomOut") return zoomBy(-0.1)
     if (id === "zoomReset") { if (service) service.setBodyZoom(1.0); return }
+    if (id === "scrollPageDown") return reader.pageBody(1)
+    if (id === "scrollPageUp") return reader.pageBody(-1)
     if (id === "refresh") {
       if (calendarVisible) calendarView.refresh()
       else if (service) service.refresh()
