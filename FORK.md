@@ -17,6 +17,7 @@ and both have been cheap to follow (see "Keeping up").
 | Feature | Key | Where it lives |
 |---|---|---|
 | Reader follows the cursor (preview, debounced 70 ms) | `j`/`k`, and after `e`/`d`/`h` | `App.qml` `previewTimer`, `onCursorIdChanged` |
+| Archive/trash moves the cursor to the row above, not below; a background poll/wake no longer discards pages loaded past page 1 (was losing the cursor to the top-of-inbox fallback) | — | `Model.cursorAfterRemoval`, `MailAccount` pollTimer/refreshCounts/wake guards |
 | Shown for 1 s = read; `u` marks unread and holds it while highlighted | `u` | `App.qml` `readTimer`, `heldUnreadId` |
 | Remind me later: snooze to a preset or a typed phrase, wake pinned to the inbox top with "Reminder: ", Snoozed mailbox | `h` | `message/Snooze.js`, `components/SnoozePicker.qml`, `MailAccount` snooze/wake, `Service` scheduler, `~/.config/omamail/snoozes.json` |
 | Label picker: filter, toggle, create | `l` | `components/LabelPicker.qml`, `Model.labelChoices`, `GmailApiClient.createLabel` |

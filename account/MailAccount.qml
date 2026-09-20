@@ -183,8 +183,14 @@ Item {
           root.pluginDir + "/assets/omamail.svg",
           "--", Snooze.prefixSubject(record.subject), String(record.from || "")])
       }
-      // The inbox has a row it did not have a moment ago.
-      if (root.active && root.windowOpen && !root.localMailbox) root.loadMessages(false)
+      // The inbox has a row it did not have a moment ago — unless the list is
+      // already deeper than one page, where this reload would cost more than
+      // it gives (see the poll timer): resurface() above already pins the
+      // woken message to the top of what is already loaded once its summary
+      // arrives, via fetchWokenSummaries.
+      if (root.active && root.windowOpen && !root.localMailbox
+        && root.messages.length <= root.maxMessages)
+        root.loadMessages(false)
     })
   }
 
@@ -587,7 +593,13 @@ Item {
       // nothing, because there is nothing to compare against.
       var first = !root.countPrimed
       root.countPrimed = true
-      if ((first || page.estimate > before) && !root.listLoading)
+      // Not past the guard below on a list already deeper than one page: this
+      // reload asks for that one page again, so running it under someone who
+      // scrolled past it with "load more" would throw the rest away — and the
+      // cursor with it, if the row it was on had scrolled past too. A new-mail
+      // toast a poll late is a smaller loss than the list itself jumping.
+      if ((first || page.estimate > before) && !root.listLoading
+        && root.messages.length <= root.maxMessages)
         root.loadMessages(false)
     })
   }
@@ -2353,9 +2365,15 @@ Item {
     onTriggered: {
       // Every account polls its count, and refreshCounts loads the list for any
       // mailbox whose count has risen — that is what feeds the badge and the
-      // notification. An open window keeps its own list current regardless.
+      // notification. An open window keeps its own list current regardless —
+      // except past the first page: loadMessages(false) asks for that page
+      // alone, so refreshing it under someone who scrolled past it with "load
+      // more" would throw away every row beyond it, taking the cursor with it
+      // if that row was one of them. A badge that is a poll behind while the
+      // list is deep is a smaller loss than the list itself jumping.
       root.refreshCounts()
-      if (root.active && root.windowOpen) root.loadMessages(false)
+      if (root.active && root.windowOpen && root.messages.length <= root.maxMessages)
+        root.loadMessages(false)
     }
   }
 }
