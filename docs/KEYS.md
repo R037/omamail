@@ -121,8 +121,8 @@ used to exist, and they had.
 | `zoomIn` | `Ctrl++`, `Ctrl+=` | reader | Zoom the message body in |
 | `zoomOut` | `Ctrl+-` | reader | Zoom the message body out |
 | `zoomReset` | `Ctrl+Shift+0` | reader | Reset the zoom |
-| `scrollPageDown` | `Space` | reader | Scroll down half a page |
-| `scrollPageUp` | `Shift+Space` | reader | Scroll up half a page |
+| `scrollPageDown` | `Space` | mail | Scroll down half a page |
+| `scrollPageUp` | `Shift+Space` | mail | Scroll up half a page |
 | `refresh` | `F5` | all | Check for mail |
 | `settings` | `Ctrl+,` | all | Open settings |
 | `help` | `Ctrl+K`, `?`, `Ctrl+/`, `Ctrl+?` | mail | Toggle all keybindings |

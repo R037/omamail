@@ -158,12 +158,17 @@ var BINDINGS = [
   { id: "zoomReset", keys: ["Ctrl+Shift+0"], contexts: ["reader"],
     group: "Reading", label: "Reset the zoom" },
 
-  // Space bar paging, the way a browser reads a long page. Reader-only, so a
-  // search field or a compose body still gets a literal space typed into it —
-  // the window-level Shortcut is simply disabled outside this context.
-  { id: "scrollPageDown", keys: ["Space"], contexts: ["reader"],
+  // Space bar paging, the way a browser reads a long page. MAIL rather than
+  // just "reader": the reader pane previews the cursor's message beside the
+  // list without ever switching currentView to "reader" (previewCursor()),
+  // so "list" is the live context for most reading in the wide layout — a
+  // reader-only binding would work only after Enter/"o" explicitly opened
+  // one. Bound in both, guarded on `reader.visible` in App.qml, so a search
+  // field or a compose body still gets a literal space typed into it — the
+  // window-level Shortcut is simply disabled in those contexts.
+  { id: "scrollPageDown", keys: ["Space"], contexts: MAIL,
     group: "Reading", label: "Scroll down half a page" },
-  { id: "scrollPageUp", keys: ["Shift+Space"], contexts: ["reader"],
+  { id: "scrollPageUp", keys: ["Shift+Space"], contexts: MAIL,
     group: "Reading", label: "Scroll up half a page" },
 
   { id: "refresh", keys: ["F5"], contexts: ANY,
