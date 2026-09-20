@@ -581,6 +581,64 @@ const rewoken = model.surfaceReminders(again, [{ id: "c", at: 2 }], {}, "inbox")
 assert.strictEqual(model.displaySubject(rewoken[0]), "Reminder: C")
 assert.strictEqual(model.displaySubject(model.detailSummary(rewoken[0], { id: "c", subject: "C" })), "Reminder: C")
 
+// A reminder that woke a while ago must not out-rank mail that has actually
+// arrived since — the whole point of the change. `rem` still carries a
+// stale, pre-snooze `.date` (Jan 5) and `reminder: true`; effectiveMs must
+// use its wake time (Jan 10), not that date.
+{
+  const wakeAt = new Date(2026, 0, 10, 8, 0, 0).getTime()
+  const rowsA = [
+    { id: "new1", subject: "New 1", date: new Date(2026, 0, 12, 9, 0, 0) },
+    { id: "rem", subject: "Reminder target", date: new Date(2026, 0, 5, 9, 0, 0), reminder: true },
+    { id: "old1", subject: "Old 1", date: new Date(2026, 0, 8, 9, 0, 0) }
+  ]
+  deepEqual(model.surfaceReminders(rowsA, [{ id: "rem", at: wakeAt }], {}, "inbox").map(m => m.id),
+    ["new1", "rem", "old1"],
+    "a reminder sorts by its wake time, not pinned above newer mail forever")
+}
+
+// Two reminders interleave with dated rows and with each other by their own
+// wake times; both fetched off-page (not in the loaded page).
+{
+  const wakeEarly = new Date(2026, 0, 1, 8, 0, 0).getTime()
+  const wakeLate = new Date(2026, 0, 20, 8, 0, 0).getTime()
+  const rowsB = [
+    { id: "newest", subject: "Newest", date: new Date(2026, 0, 25, 9, 0, 0) },
+    { id: "middle", subject: "Middle", date: new Date(2026, 0, 10, 9, 0, 0) },
+    { id: "oldest", subject: "Oldest", date: new Date(2025, 11, 20, 9, 0, 0) }
+  ]
+  const wokenB = [{ id: "r2", at: wakeLate }, { id: "r1", at: wakeEarly }]
+  const fetchedB = { r1: { id: "r1", subject: "R1" }, r2: { id: "r2", subject: "R2" } }
+  deepEqual(model.surfaceReminders(rowsB, wokenB, fetchedB, "inbox").map(m => m.id),
+    ["newest", "r2", "middle", "r1", "oldest"],
+    "reminders interleave with dated rows and with each other by wake time")
+}
+
+// A very stale reminder sinks to the bottom of a short, all-newer list — the
+// direct counter-example to "pinned above everything forever".
+{
+  const staleAt = new Date(2020, 0, 1, 8, 0, 0).getTime()
+  const rowsD = [
+    { id: "x", subject: "X", date: new Date(2026, 0, 1, 9, 0, 0) },
+    { id: "y", subject: "Y", date: new Date(2025, 6, 1, 9, 0, 0) }
+  ]
+  deepEqual(model.surfaceReminders(rowsD, [{ id: "r", at: staleAt }],
+    { r: { id: "r", subject: "R" } }, "inbox").map(m => m.id),
+    ["x", "y", "r"],
+    "a very old reminder sinks below all newer mail rather than staying pinned")
+}
+
+// Two reminders woken at the exact same millisecond stay deterministic
+// regardless of whether the JS engine's sort happens to be stable.
+{
+  const sameAt = new Date(2026, 0, 15, 8, 0, 0).getTime()
+  const wokenC = [{ id: "r1", at: sameAt }, { id: "r2", at: sameAt }]
+  const fetchedC = { r1: { id: "r1", subject: "R1" }, r2: { id: "r2", subject: "R2" } }
+  deepEqual(model.surfaceReminders([], wokenC, fetchedC, "inbox").map(m => m.id),
+    ["r1", "r2"],
+    "two reminders woken at the same moment sort deterministically")
+}
+
 console.log("test_model.js reminders ok")
 
 // ----------------------------------------------------------------- labels

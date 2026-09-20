@@ -20,7 +20,7 @@ and both have been cheap to follow (see "Keeping up").
 | Archive/trash moves the cursor to the row above, not below; a background poll/wake no longer discards pages loaded past page 1 (was losing the cursor to the top-of-inbox fallback) | — | `Model.cursorAfterRemoval`, `MailAccount` pollTimer/refreshCounts/wake guards |
 | List loads the next page on scrolling near the end, not only on clicking "Load more" | — | `Model.nearListEnd`, `App.qml` `listFlick.nearEnd` |
 | Shown for 1 s = read; `u` marks unread and holds it while highlighted | `u` | `App.qml` `readTimer`, `heldUnreadId` |
-| Remind me later: snooze to a preset or a typed phrase, wake pinned to the inbox top with "Reminder: ", Snoozed mailbox | `h` | `message/Snooze.js`, `components/SnoozePicker.qml`, `MailAccount` snooze/wake, `Service` scheduler, `~/.config/omamail/snoozes.json` |
+| Remind me later: snooze to a preset or a typed phrase, wake sorted into the inbox at its wake moment with "Reminder: " (falls below newer mail as it arrives), Snoozed mailbox | `h` | `message/Snooze.js`, `components/SnoozePicker.qml`, `MailAccount` snooze/wake, `Service` scheduler, `~/.config/omamail/snoozes.json` |
 | Label picker: filter, toggle, create | `l` | `components/LabelPicker.qml`, `Model.labelChoices`, `GmailApiClient.createLabel` |
 | Read the cursor's neighbours ahead (2 below, 1 above), pre-parsed | — | `MailAccount` `prefetchAround`/`applyLivePayload`/`warmRender`, `Model.prefetchNeighbours` |
 | Select text in the reader → clipboard | — | `MessageReader.qml` `copySelectionTimer` |

@@ -217,11 +217,14 @@ function isSnoozedMailbox(key) {
   return String(key || "") === SNOOZED_MAILBOX.key
 }
 
-// A woken reminder sits above the inbox rather than back at the date it
-// arrived, which for a two-week reminder is two pages down. `woken` is the
-// records in the order they should sit, `extra` the summaries fetched for the
-// ones the loaded page does not hold, keyed by id. Every reminder in the
-// resulting list carries `reminder: true`, which is what draws its prefix.
+// A woken reminder sits among the inbox at the moment it woke rather than
+// back at the date it originally arrived, which for a two-week reminder is
+// two pages down — but it is not pinned there forever: mail that genuinely
+// arrives after that moment sorts above it, the same as it would above any
+// other message with an older date. `woken` is the records (any order),
+// `extra` the summaries fetched for the ones the loaded page does not hold,
+// keyed by id. Every reminder in the resulting list carries `reminder: true`,
+// which is what draws its prefix.
 //
 // Only the inbox and its unread view are reordered: a reminder in Starred or
 // a search is a row like any other, and it still says what it is.
@@ -230,13 +233,13 @@ function surfaceReminders(messages, woken, extra, mailboxKey) {
   var records = Array.isArray(woken) ? woken : []
   var fetched = extra && typeof extra === "object" ? extra : {}
   var key = String(mailboxKey || "inbox")
-  var wokenIds = {}
-  for (var r = 0; r < records.length; r++) wokenIds[records[r].id] = true
+  var atById = {}
+  for (var r = 0; r < records.length; r++) atById[records[r].id] = records[r].at
 
   var flagged = []
   for (var i = 0; i < list.length; i++) {
     var summary = list[i]
-    var isReminder = wokenIds[summary.id] === true
+    var isReminder = atById[summary.id] !== undefined
     if (isReminder !== (summary.reminder === true)) {
       var copy = {}
       for (var field in summary) copy[field] = summary[field]
@@ -248,28 +251,66 @@ function surfaceReminders(messages, woken, extra, mailboxKey) {
   }
   if (key !== "inbox" && key !== "unread") return flagged
 
-  var pinned = []
-  var pinnedIds = {}
+  // A reminder sorts by the moment it woke, never by whatever `.date` it may
+  // still carry from before it was snoozed — only `atById` speaks for a
+  // reminder row's position.
+  //
+  // Read by calling getTime() rather than checking `instanceof Date`: the
+  // same value built in a different realm — a worker, a test harness's vm
+  // sandbox — is still a real Date and still answers getTime() correctly,
+  // where instanceof would wrongly say no, being a check on the prototype
+  // chain's identity rather than on the object itself.
+  function effectiveMs(row) {
+    if (row.reminder === true) return atById[row.id]
+    var value = row.date
+    return value && typeof value.getTime === "function" ? value.getTime() : 0
+  }
+
+  var rest = []
+  var present = {}
+  var reminders = []
+  for (var j = 0; j < flagged.length; j++) {
+    if (flagged[j].reminder === true) { reminders.push(flagged[j]); present[flagged[j].id] = true }
+    else rest.push(flagged[j])
+  }
   for (var w = 0; w < records.length; w++) {
     var id = records[w].id
-    var known = null
-    for (var k = 0; k < flagged.length; k++) {
-      if (flagged[k].id === id) { known = flagged[k]; break }
-    }
-    if (!known && fetched[id]) {
-      known = {}
-      for (var name in fetched[id]) known[name] = fetched[id][name]
-      known.reminder = true
-    }
-    if (!known) continue
-    pinned.push(known)
-    pinnedIds[id] = true
+    if (present[id] || !fetched[id]) continue
+    var known = {}
+    for (var name in fetched[id]) known[name] = fetched[id][name]
+    known.reminder = true
+    reminders.push(known)
+    present[id] = true
   }
-  var rest = []
-  for (var j = 0; j < flagged.length; j++) {
-    if (pinnedIds[flagged[j].id] !== true) rest.push(flagged[j])
+
+  // Sorted by wake time, most recent first, with each reminder's own arrival
+  // order as the tiebreak: Array.prototype.sort is not guaranteed stable in
+  // every JS engine, and two reminders woken in the same millisecond is the
+  // one place a silent, engine-dependent reorder would show.
+  var order = []
+  for (var o = 0; o < reminders.length; o++) order.push(o)
+  order.sort(function(p, q) {
+    var diff = effectiveMs(reminders[q]) - effectiveMs(reminders[p])
+    return diff !== 0 ? diff : p - q
+  })
+
+  // rest is already date-descending (that is how every provider hands the
+  // inbox back), so one left-to-right pass — each reminder found a home
+  // before the next is considered — is enough to land the whole merge in
+  // the correct order rather than needing a full re-sort.
+  //
+  // >= rather than >: stopping only at a strictly later row would have a
+  // second reminder tied with the first stop one row short and splice in
+  // ahead of it, reversing the very order `order`'s own tiebreak just fixed.
+  // Landing after an equal row instead is what makes this insertion stable.
+  for (var m = 0; m < order.length; m++) {
+    var row = reminders[order[m]]
+    var at = effectiveMs(row)
+    var pos = 0
+    while (pos < rest.length && effectiveMs(rest[pos]) >= at) pos++
+    rest.splice(pos, 0, row)
   }
-  return pinned.concat(rest)
+  return rest
 }
 
 var REMINDER_PREFIX = "Reminder: "
