@@ -627,6 +627,24 @@ function contentYToReveal(contentY, viewportHeight, itemY, itemHeight,
   return next
 }
 
+// True once the list has been scrolled within `margin` of its own end —
+// whether by the wheel, the scrollbar, or `j` walking the cursor down to a
+// row near the bottom, since revealCursorRow moves the same contentY. This is
+// the trigger for loading another page on its own: with thousands of messages
+// and a page size in the tens, waiting for a click on "Load more" turned
+// scrolling an inbox into paging through it one screenful at a time. A list
+// that does not yet fill its own viewport is never near an end worth loading
+// past — that reading would otherwise be true (0 >= a negative number) the
+// moment a short or still-loading list mounted.
+function nearListEnd(contentY, viewportHeight, contentHeight, margin) {
+  var y = Number(contentY) || 0
+  var view = Number(viewportHeight) || 0
+  var total = Number(contentHeight) || 0
+  var pad = Number(margin) || 0
+  if (total <= view) return false
+  return y + view >= total - pad
+}
+
 function unreadCount(list) {
   var source = Array.isArray(list) ? list : []
   var count = 0

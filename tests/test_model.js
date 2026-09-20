@@ -264,6 +264,24 @@ assert.strictEqual(model.pluralize(0, "message"), "0 messages")
     "content shorter than the viewport never scrolls")
 }
 
+// --------------------------------------------------- loading the next page
+
+{
+  // A 100-tall viewport, 500 of content, 50 of margin: the zone worth
+  // loading in starts at contentY 350.
+  assert.strictEqual(model.nearListEnd(0, 100, 500, 50), false,
+    "the top of a long list is nowhere near its end")
+  assert.strictEqual(model.nearListEnd(349, 100, 500, 50), false)
+  assert.strictEqual(model.nearListEnd(350, 100, 500, 50), true,
+    "the margin is where it starts")
+  assert.strictEqual(model.nearListEnd(400, 100, 500, 50), true,
+    "the bottom itself is well inside it")
+  assert.strictEqual(model.nearListEnd(0, 100, 90, 50), false,
+    "content that does not fill the viewport is never near an end")
+  assert.strictEqual(model.nearListEnd(0, 100, 100, 50), false,
+    "exactly filling it is the same answer")
+}
+
 
 // ------------------------------------------- the cursor outliving its message
 

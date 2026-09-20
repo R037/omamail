@@ -1087,6 +1087,19 @@ Item {
             boundsBehavior: Flickable.StopAtBounds
             ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
+            // Scrolling near the end loads the next page itself — with
+            // thousands of messages and a page size in the tens, "Load more"
+            // as the only way past the first page meant clicking it dozens of
+            // times to get anywhere. Edge-triggered on the boolean rather than
+            // called from onContentYChanged directly: loadMore() already
+            // no-ops while a fetch is in flight, but there is no reason to
+            // evaluate and call it on every pixel of a drag when it can fire
+            // once on crossing into the zone and go quiet until the newly
+            // grown content carries the edge back out of it.
+            readonly property bool nearEnd: Model.nearListEnd(
+              contentY, height, contentHeight, Style.space(500))
+            onNearEndChanged: if (nearEnd && root.service) root.service.loadMore()
+
             MessageList {
               id: list
               y: Style.space(8)
