@@ -26,6 +26,7 @@ and both have been cheap to follow (see "Keeping up").
 | Hover fill only for a pointer that moved (no trailing highlight) | — | `MessageRow.qml` `pointerHere`, `MessageList.qml` `pointerAt` |
 | Space-bar paging in the reader, browser-style | `Space` / `Shift+Space` | `keys/Keymap.js`, `MessageReader.qml` `pageBody` |
 | Perf: native base64 decode, one MIME walk, sanitize LRU, cache-hit skips | — | `Message.js`, `cache/RenderCache.js`, `MailAccount.select` |
+| Raised heaviness ceiling: 1MB/20k elements/400 tables, up from upstream's 120KB/2.5k/60 | — | `message/Html.js` `MAX_RICH_TEXT`/`MAX_ELEMENTS`/`MAX_TABLES` |
 | Helper scripts found from `Service.qml`'s own path (Omarchy hides `__sourceDir`) | — | `Service.qml` `pluginDir` — upstream has the same fix (#162) |
 
 Everything is covered by `make test` (JS, shell canaries, QML) and `docs/KEYS.md`

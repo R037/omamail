@@ -988,8 +988,14 @@ function flattenTablesIn(node, limit, depth) {
 // to make that layout take seconds does not just stall the reader — it stalls
 // the bar, the menu and every other panel. So the reader refuses documents past
 // these bounds and shows the plain-text part instead, with a way to override.
-var MAX_RICH_TEXT = 120000
-var MAX_ELEMENTS = 2500
+//
+// Raised well past what any real newsletter reaches, on measurement: every
+// message this ever fired on, forced open anyway with "Show anyway", laid
+// out without a stall. The old ceiling was tuned for hardware this plugin
+// does not run on here — see FORK.md. What is left is a backstop against a
+// message actually built to hang the layout, not a limit real mail meets.
+var MAX_RICH_TEXT = 1000000
+var MAX_ELEMENTS = 20000
 var MAX_IMAGES = 24
 
 // What stands in for a picture whose bytes are still on their way: one
@@ -1005,9 +1011,12 @@ function declaredPixels(node, name) {
   var match = String(value === undefined || value === null ? "" : value).match(/^\s*(\d+(?:\.\d+)?)\s*(?:px)?\s*$/i)
   return match ? Math.round(Number(match[1])) : 0
 }
-// Backstop for anything flattening does not tame.
-var MAX_TABLES = 60
-var MAX_TABLE_DEPTH = 4
+// Backstop for anything flattening does not tame. Flattening already caps
+// real nesting at KEEP_TABLE_DEPTH, so MAX_TABLE_DEPTH firing means flattening
+// itself broke; MAX_TABLES is the one a wide, table-heavy newsletter can
+// actually reach, raised with MAX_RICH_TEXT and MAX_ELEMENTS above.
+var MAX_TABLES = 400
+var MAX_TABLE_DEPTH = 8
 
 // One walk over one element's attributes. Doing it as four passes — colours,
 // then handlers, then hrefs, then styles — rebuilt the array four times for

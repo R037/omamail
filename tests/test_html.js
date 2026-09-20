@@ -1354,22 +1354,27 @@ function activityMail() {
     return out + "</body></html>"
   }
 
-  const heavy = html.sanitize(outlookMail(240), { withReader: true })
+  // 2000 cards, not 240: the ceiling was raised (see message/Html.js) on
+  // measurement that real mail never approached it, so the fixture proving
+  // the formatted view still refuses something has to be heavier too.
+  const heavy = html.sanitize(outlookMail(2000), { withReader: true })
   assert.strictEqual(heavy.tooHeavy, true, "the formatted view refuses this one")
   assert.strictEqual(heavy.reader.tooHeavy, false, "and reading mode still draws it")
   assert.ok(heavy.reader.complexity.tags < heavy.complexity.tags / 2)
   assert.strictEqual(heavy.reader.complexity.tableDepth, 0)
-  assert.ok(heavy.reader.html.indexOf("Headline 239") > 0, "with the whole message in it")
+  assert.ok(heavy.reader.html.indexOf("Headline 1999") > 0, "with the whole message in it")
 
   // Nothing is truncated to fit. A reading that grew past what Qt can lay out
   // is refused whole and the message is shown as text, which is an answer —
   // where a reading that stopped in the middle would have looked exactly like a
   // message that ended there.
+  // 25000, not 3000: the ceiling was raised (see message/Html.js), so this
+  // has to be heavier too to still land past it.
   let long = "<html><body>"
-  for (let i = 0; i < 3000; i++) long += "<p>Paragraph number " + i + " of a long message.</p>"
+  for (let i = 0; i < 25000; i++) long += "<p>Paragraph number " + i + " of a long message.</p>"
   const enormous = html.sanitize(long + "</body></html>", { withReader: true }).reader
   assert.strictEqual(enormous.tooHeavy, true)
-  assert.ok(enormous.html.indexOf("number 2999") > 0, "and the whole message is in what was refused")
+  assert.ok(enormous.html.indexOf("number 24999") > 0, "and the whole message is in what was refused")
 
   // An inline element left open is reopened in every block the chain crosses,
   // so a sender holding a hundred of them open multiplies the whole message by
