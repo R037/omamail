@@ -17,7 +17,7 @@ and both have been cheap to follow (see "Keeping up").
 | Feature | Key | Where it lives |
 |---|---|---|
 | Reader follows the cursor (preview, debounced 70 ms) | `j`/`k`, and after `e`/`d`/`h` | `App.qml` `previewTimer`, `onCursorIdChanged` |
-| Archive/trash moves the cursor to the row above, not below; a background poll/wake no longer discards pages loaded past page 1 (was losing the cursor to the top-of-inbox fallback) | — | `Model.cursorAfterRemoval`, `MailAccount` pollTimer/refreshCounts/wake guards |
+| Archive/trash/remind moves the cursor to the row below (the one that slides into its place, matching working down a list) rather than the top of the inbox; a background poll/wake no longer discards pages loaded past page 1 | — | `Model.cursorAfterRemoval`, `MailAccount` pollTimer/refreshCounts/wake guards |
 | List loads the next page on scrolling near the end, not only on clicking "Load more" | — | `Model.nearListEnd`, `App.qml` `listFlick.nearEnd` |
 | Shown for 1 s = read; `u` marks unread and holds it while highlighted | `u` | `App.qml` `readTimer`, `heldUnreadId` |
 | Remind me later: snooze to a preset or a typed phrase, wake sorted into the inbox at its wake moment with "Reminder: " (falls below newer mail as it arrives), Snoozed mailbox | `h` | `message/Snooze.js`, `components/SnoozePicker.qml`, `MailAccount` snooze/wake, `Service` scheduler, `~/.config/omamail/snoozes.json` |

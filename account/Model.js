@@ -617,8 +617,12 @@ function prefetchedSummary(row, summary) {
 
 // Where the cursor goes when the row it is on is about to leave the list.
 // Called with the list as it still is, so the departing row still has
-// neighbours: the one above takes the cursor, or the one below at the top of
-// the list, where there is nothing above to take it.
+// neighbours: the one below takes the cursor, which is the one that slides
+// into its place, or the one above at the end of the list, where there is
+// nothing below to take it. Working down a list — archiving, deleting,
+// reminding one row after another — is the common case, and the cursor
+// should keep moving the way it was already going rather than doubling
+// back over what has already been dealt with.
 //
 // Leaving the cursor on a row that has gone is not harmless. cursorAfterOffset
 // cannot find it, so it restarts at the top — which is how archiving one
@@ -627,8 +631,8 @@ function cursorAfterRemoval(list, cursorId) {
   var source = Array.isArray(list) ? list : []
   var index = indexById(source, cursorId)
   if (index < 0) return ""
-  if (index > 0) return source[index - 1].id
   if (index + 1 < source.length) return source[index + 1].id
+  if (index > 0) return source[index - 1].id
   return ""
 }
 

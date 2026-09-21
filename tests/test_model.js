@@ -293,11 +293,12 @@ assert.strictEqual(model.pluralize(0, "message"), "0 messages")
 {
   const rows = [{ id: "a" }, { id: "b" }, { id: "c" }]
 
-  // Acting on a row: the cursor goes to the one above it.
-  assert.strictEqual(model.cursorAfterRemoval(rows, "c"), "b")
-  assert.strictEqual(model.cursorAfterRemoval(rows, "b"), "a")
-  // Except at the top, where there is nothing above and the one below takes it.
+  // Acting on a row: the cursor goes to the one below it, which is also the
+  // one that slides into its place.
   assert.strictEqual(model.cursorAfterRemoval(rows, "a"), "b")
+  assert.strictEqual(model.cursorAfterRemoval(rows, "b"), "c")
+  // Except at the bottom, where there is nothing below and the one above takes it.
+  assert.strictEqual(model.cursorAfterRemoval(rows, "c"), "b")
   assert.strictEqual(model.cursorAfterRemoval([{ id: "only" }], "only"), "",
     "emptying the list leaves no cursor to hold")
   assert.strictEqual(model.cursorAfterRemoval(rows, "gone"), "",
